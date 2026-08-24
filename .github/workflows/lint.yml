@@ -1,0 +1,106 @@
+name: lint
+
+# Static-analysis gate — `lein lint` (scripts/lint.sh): clj-kondo, cljfmt,
+# shellcheck, and the reflection ratchet. One job, because the script runs all
+# four and is deliberately NOT fail-fast; splitting them would cost a JVM boot
+# each to learn what one run already knows, and would lose the report.
+#
+# Unlike the engine's own lint, the reflection ratchet here AOT-compiles the
+# adapter's namespace, which requires the engine's snapshot seam — so core is
+# checked out alongside and wired into checkouts/ (scripts/check-reflection.sh
+# states why). kondo, cljfmt and shellcheck are self-contained and don't need it.
+#
+# Dispatch-only (matching the engine's policy for the private dev repos: no
+# auto-runs for now). Run it from the Actions tab.
+#
+# EVERY `uses:` IS A COMMIT SHA with the version in a trailing comment. A tag is a
+# mutable ref the action's owner (or whoever takes that account) can repoint; a
+# SHA is the artifact itself. Dependabot reads the trailing version comment.
+#
+# WHERE CORE COMES FROM: `vaelii/vaelii`, cloned anonymously with the job's own
+# token — the engine is public, so a public run provisions nothing. The repo
+# variable CORE_REPO and the CORE_REPO_TOKEN secret override that, and staging
+# is what they are for: a release is validated against the staging copy of core
+# before either half is public, and that copy is private. Same pattern as the
+# plugin's two workflows.
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+  workflow_dispatch:
+
+# Least privilege: this job reads the repo and runs analysis; it never writes
+# back. A private-core clone (staging) uses its own CORE_REPO_TOKEN PAT,
+# unaffected by this.
+permissions:
+  contents: read
+
+concurrency:
+  group: lint-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  lint:
+    name: lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout vaelii-postgres
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          path: vaelii-postgres
+          persist-credentials: false
+
+      - name: Checkout vaelii core
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          repository: ${{ vars.CORE_REPO || 'vaelii/vaelii' }}
+          token: ${{ secrets.CORE_REPO_TOKEN || github.token }}
+          path: vaelii
+          # No credential is written into vaelii/.git/config: the clone is
+          # anonymous, and the rest of the job runs third-party lein plugins.
+          persist-credentials: false
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961  # v5.7.0
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      # kondo runs as a standalone binary, not through lein — `lein lint-kondo`
+      # shells out to it — so this installs both, each pinned: the action is a
+      # SHA, and `clj-kondo:` names a version rather than taking *latest*, so a
+      # kondo release cannot turn this workflow red with no change here.
+      - name: Set up Leiningen and clj-kondo
+        uses: DeLaGuardo/setup-clojure@4c7a6f613e5089821bb3bb2a33a3ee115578580d  # 13.6.1
+        with:
+          lein: 2.12.0  # 2.13.0's launcher self-installs an unpublished snapshot jar
+          clj-kondo: 2026.08.04
+
+      - name: Cache Maven deps
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
+        with:
+          path: ~/.m2
+          key: m2-${{ runner.os }}-jdk21-${{ hashFiles('vaelii/project.clj', 'vaelii-postgres/project.clj') }}
+          restore-keys: |
+            m2-${{ runner.os }}-jdk21-
+
+      # The reflection ratchet's `lein check` loads core SOURCE through the
+      # checkout, but Leiningen still resolves core's coordinate for its
+      # transitive deps — so install core into ~/.m2 first, then wire the
+      # checkout so the compile sees the checked-out source.
+      - name: Install vaelii core (for the reflection step's deps)
+        working-directory: vaelii
+        run: lein install
+
+      - name: Wire core into vaelii-postgres's checkouts
+        run: |
+          mkdir -p vaelii-postgres/checkouts
+          ln -s ../../vaelii vaelii-postgres/checkouts/vaelii
+
+      # The whole report in one command, so CI and a local run cannot diverge:
+      # this is the same `lein lint` a contributor runs, non-zero iff any check
+      # failed. shellcheck is preinstalled on ubuntu-latest.
+      - name: Lint
+        working-directory: vaelii-postgres
+        run: lein lint

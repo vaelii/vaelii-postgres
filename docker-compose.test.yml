@@ -1,0 +1,33 @@
+# A server for `lein test`, and nothing else.
+#
+# Every db-touching test in this repo is gated on a reachable Postgres and skips
+# with a printed reason when there is none, so the suite is green without this
+# file. What it is *not* is covered — the record store's oracle, its durability
+# and its COPY path are the tests that need a server — so a change to
+# `vaelii.postgres.record-store` is landed against a run that had one.
+#
+#   docker compose -f docker-compose.test.yml up -d
+#   POSTGRES_USER=vaelii POSTGRES_PASSWORD=vaelii lein test
+#   docker compose -f docker-compose.test.yml down -v
+#
+# Each test works in a schema of its own and drops it afterwards, so the same
+# server can carry several runs.
+
+services:
+  postgres:
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_USER: vaelii
+      POSTGRES_PASSWORD: vaelii
+      POSTGRES_DB: vaelii
+    ports:
+      # host loopback only — this is a test fixture, not a deployment
+      - "127.0.0.1:5432:5432"
+    # the suite is short and the data is disposable: keep it off disk entirely
+    tmpfs:
+      - /var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U vaelii -d vaelii"]
+      interval: 2s
+      timeout: 3s
+      retries: 15

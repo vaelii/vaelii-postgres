@@ -1,0 +1,105 @@
+name: test
+
+# The adapter's own suite (test/vaelii/postgres/snapshot_test.clj), run against a
+# live Postgres. Every db-touching test is gated on a reachable server and skips
+# with a printed reason otherwise, so this job stands up a `postgres:16` service
+# and points the suite at it with VAELII_PG_URL — without it the run is green but
+# vacuous. The tests require the engine (vaelii.core / the snapshot seam), so core
+# is checked out alongside and wired into checkouts/.
+#
+# Dispatch-only (matching the engine's policy for the private dev repos). Every
+# `uses:` is a commit SHA with the version in a trailing comment — see lint.yml.
+#
+# WHERE CORE COMES FROM: `vaelii/vaelii`, cloned anonymously with the job's own
+# token — the engine is public, so a public run provisions nothing. The repo
+# variable CORE_REPO and the CORE_REPO_TOKEN secret override that, and staging
+# is what they are for: a release is validated against the staging copy of core
+# before either half is public, and that copy is private. Same pattern as the
+# plugin's two workflows.
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: test-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  suite:
+    name: postgres
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: vaelii
+          POSTGRES_PASSWORD: vaelii
+          POSTGRES_DB: vaelii
+        ports:
+          - 5432:5432
+        # Hold the job at the gate until the server answers, so the first test
+        # doesn't race a still-booting container into a spurious skip.
+        options: >-
+          --health-cmd "pg_isready -U vaelii"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Checkout vaelii-postgres
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          path: vaelii-postgres
+          persist-credentials: false
+
+      - name: Checkout vaelii core
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          repository: ${{ vars.CORE_REPO || 'vaelii/vaelii' }}
+          token: ${{ secrets.CORE_REPO_TOKEN || github.token }}
+          path: vaelii
+          persist-credentials: false
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961  # v5.7.0
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Set up Leiningen
+        uses: DeLaGuardo/setup-clojure@4c7a6f613e5089821bb3bb2a33a3ee115578580d  # 13.6.1
+        with:
+          lein: 2.12.0  # 2.13.0's launcher self-installs an unpublished snapshot jar
+
+      - name: Cache Maven deps
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
+        with:
+          path: ~/.m2
+          key: m2-${{ runner.os }}-jdk21-${{ hashFiles('vaelii/project.clj', 'vaelii-postgres/project.clj') }}
+          restore-keys: |
+            m2-${{ runner.os }}-jdk21-
+
+      # `lein test` loads core SOURCE through the checkout, but Leiningen still
+      # resolves core's coordinate for its transitive deps — install it first,
+      # then wire the checkout so the suite runs against the checked-out source.
+      - name: Install vaelii core (for its transitive deps)
+        working-directory: vaelii
+        run: lein install
+
+      - name: Wire core into vaelii-postgres's checkouts
+        run: |
+          mkdir -p vaelii-postgres/checkouts
+          ln -s ../../vaelii vaelii-postgres/checkouts/vaelii
+
+      - name: Run the suite against the Postgres service
+        working-directory: vaelii-postgres
+        env:
+          VAELII_PG_URL: jdbc:postgresql://localhost:5432/vaelii?user=vaelii&password=vaelii
+        run: lein test

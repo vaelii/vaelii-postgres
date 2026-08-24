@@ -1,0 +1,57 @@
+# The roster of people whose commits may land.
+#
+# CONTRIBUTING.md, under Conventions: each commit's author is the person who
+# signs it off, a `Signed-off-by:` may only name someone who can make that
+# certification, and a co-author trailer is human-only.
+# `scripts/check-authorship.py` enforces that against this file, and reports the
+# `authorship` check on every pull request.
+#
+# The DCO cannot do this. The DCO app matches a trailer string against the
+# commit's author field, and cannot ask whether the party named is a person, so
+# a sign-off goes green for an account that is not one. This file is where that
+# question is answered, once per contributor, by a maintainer.
+#
+# This repo is Apache-2.0 and has no `license/cla` check: the CLA is the SSPL
+# relicensing story and covers the engine only. The DCO is not, and neither is
+# this — a `Signed-off-by:` certifies right-to-submit under whatever licence the
+# project carries, so a certification no one can make is void here too.
+#
+# The gate reads this file **from the base branch**, so a pull request cannot
+# admit its own author. Adding a line is a maintainer commit to `develop`.
+#
+# Format: one person per line. The first token is the name we file them under;
+# every token is an identity that person commits as. A token containing `@` is a
+# git author/committer/trailer email, anything else is a GitHub login.
+#
+# Which token is read depends on what the identity carries. An author or
+# committer is matched on the **login**, because GitHub resolved that and nobody
+# can assert it for themselves; the git email beside it is whatever `git config
+# user.email` was set to and admits nothing on its own. An **email** is what a
+# trailer is matched on, a trailer carrying an address and no account. So a line
+# wants the login for the commits an account makes, and the addresses for the
+# trailers that credit them.
+#
+# A trailer with no `<address>` at all matches nothing and is blocked. There is
+# no line that admits one — it names a party nobody can resolve, which is the
+# answer rather than a gap.
+#
+#   <login>  <email>  [<more emails>]   # when, and anything worth knowing
+#
+# Admitting an account is a judgement that a person stands behind it and can
+# make the DCO certification. It is not a judgement about how they wrote the
+# code: a contributor may use whatever tools they like, and remains the author
+# who certifies the result. What may not appear in `author`, `Signed-off-by:` or
+# a co-author trailer is a tool, bot or agent as the named party.
+
+# Nobody is admitted here ahead of a contribution. An account earns a line when
+# it opens a pull request against THIS repo and a maintainer admits it, which is
+# one commit on `develop` before the merge — so the roster records who has worked
+# on this repo rather than a copy of who has worked on another. A contributor
+# admitted on the engine is not admitted here, and does not need to be until they
+# send something here.
+
+vaelii-admin  289251560+vaelii-admin@users.noreply.github.com   # maintainer
+
+# GitHub itself, as the committer of a merge or squash made through the web UI.
+# It is never an author and never carries a trailer.
+web-flow      noreply@github.com                                # github.com merge button

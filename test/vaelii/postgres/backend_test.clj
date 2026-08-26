@@ -1,7 +1,7 @@
 ;; SPDX-License-Identifier: Apache-2.0
 ;; Copyright © 2026 Vaelii LLC and the Vaelii contributors.
 (ns vaelii.postgres.backend-test
-  "The `:pg-memory` and `:pg-disk` backends, end to end through `vaelii.core` — the
+  "The `:pg-memory` and `:pg-disk-log` backends, end to end through `vaelii.core` — the
   wiring the engine reaches by a lazy `requiring-resolve`.  Core cannot exercise this
   itself (the adapter is not on its classpath); here both are, through
   `checkouts/vaelii`, so an open/assert/close/reopen round trip proves the whole path:
@@ -10,7 +10,7 @@
 
   The two names differ in one axis and it is the interesting one.  `:pg-memory` keeps the
   derived index in RAM and pays a full `reindex` **and** a full `recover` on every start.
-  `:pg-disk` puts that index in a durable directory on the machine running the writer, so
+  `:pg-disk-log` puts that index in a durable directory on the machine running the writer, so
   a restart on **that host** skips the rebuild — and a second host, connecting to the same
   database, finds no index and rebuilds from scratch.  The index does not travel with the
   KB, which is what the last test here pins.
@@ -87,7 +87,7 @@
   ;; With `{:recover? false}` ("open this and read what is stored, do no work") the
   ;; records are all there and the derived index is empty, because a derived index is not
   ;; stored anywhere; the default open rebuilds it, which is O(records) on **every**
-  ;; start.  `:pg-disk` is what buys that back, and the tests below are its mirror.
+  ;; start.  `:pg-disk-log` is what buys that back, and the tests below are its mirror.
   (tu/served
    (fn [ds]
      (tu/with-schema ds "vaelii_kb_copy"
@@ -165,16 +165,16 @@
                        "so the rule re-derives the same conclusions after the recover")
                    (finally (v/close! ram) (v/close! pg))))))))))))
 
-;; ---- :pg-disk -----------------------------------------------------------
+;; ---- :pg-disk-log -------------------------------------------------------
 
-(deftest a-pg-disk-kb-persists-and-recovers
+(deftest a-pg-disk-log-kb-persists-and-recovers
   (tu/served
    (fn [ds]
      (tu/with-schema ds "vaelii_kb_disk"
        (fn [spec]
          (with-temp-dir
            (fn [dir]
-             (let [kb (v/open-kb {:backend :pg-disk :pg spec :dir dir})]
+             (let [kb (v/open-kb {:backend :pg-disk-log :pg spec :dir dir})]
                (try (populate! kb)
                     (is (seq (v/sentexes-matching kb '(q Foo) 'CxTest))
                         "forward chaining derived (q Foo) in the first session")
@@ -184,12 +184,12 @@
                    "the durable index writes under :dir")
                (is (not (.exists (File. (str dir "/records"))))
                    "and the records are on the server, so nothing writes them here"))
-             (let [kb2 (v/open-kb {:backend :pg-disk :pg spec :dir dir})]
+             (let [kb2 (v/open-kb {:backend :pg-disk-log :pg spec :dir dir})]
                (try (reasons-and-retracts! kb2)
                     (finally (v/close! kb2)))))))))))
 
-(deftest the-pg-disk-index-survives-the-restart-that-empties-a-derived-one
-  ;; the whole of what `:pg-disk` buys over `:pg-memory`: the same `{:recover? false}`
+(deftest the-pg-disk-log-index-survives-the-restart-that-empties-a-derived-one
+  ;; the whole of what `:pg-disk-log` buys over `:pg-memory`: the same `{:recover? false}`
   ;; open that finds an empty index there finds a full one here, so the restart pays
   ;; `recover` and not `reindex` on top of it.
   (tu/served
@@ -198,9 +198,9 @@
        (fn [spec]
          (with-temp-dir
            (fn [dir]
-             (let [kb (v/open-kb {:backend :pg-disk :pg spec :dir dir})]
+             (let [kb (v/open-kb {:backend :pg-disk-log :pg spec :dir dir})]
                (try (populate! kb) (finally (v/close! kb))))
-             (let [kb2 (v/open-kb {:backend :pg-disk :pg spec :dir dir :recover? false})]
+             (let [kb2 (v/open-kb {:backend :pg-disk-log :pg spec :dir dir :recover? false})]
                (try
                  (is (= (count (p/sentex-ids (:records kb2)))
                         (long (p/count-at (:index kb2) [])))
@@ -219,11 +219,11 @@
        (fn [spec]
          (with-temp-dir
            (fn [host-a]
-             (let [kb (v/open-kb {:backend :pg-disk :pg spec :dir host-a})]
+             (let [kb (v/open-kb {:backend :pg-disk-log :pg spec :dir host-a})]
                (try (populate! kb) (finally (v/close! kb))))))
          (with-temp-dir
            (fn [host-b]
-             (let [kb (v/open-kb {:backend :pg-disk :pg spec :dir host-b})]
+             (let [kb (v/open-kb {:backend :pg-disk-log :pg spec :dir host-b})]
                (try
                  (is (seq (v/sentexes-matching kb '(likes Felix Tuna) 'CxTest))
                      "the second host answers, having rebuilt its index from the records")

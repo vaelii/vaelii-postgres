@@ -1,5 +1,31 @@
 # Changelog
 
+## 0.13.0 — 2026-08-25 — "the absent database, a lock held, and a pairing renamed"
+
+- **A source over a database no sink has written answers absent, and cleanup is
+  the no-op it claims.** `read-manifest` on a database with no image tables
+  answers nil — the seam's absent case — so a first-run `load-index!` reports
+  `{:index :rebuild :reason :absent}` instead of raising `undefined_table`, and
+  `drop-image!` skips a table that is not there, as its docstring says.
+  *Class:* Fix. *Migration:* none.
+
+- **`premise-ids` fills the strength cache under the fill lock.** The walk's
+  cache installs hold the read side every other fill holds, so a concurrent
+  unmark or delete can no longer be reinstated by a reader's walk landing after
+  it. *Class:* Fix. *Migration:* none.
+
+- **A failed sink open releases its connection.** `pg-sink` closes the
+  connection it borrowed when construction throws past the borrow, the same
+  guard the record store's open carries. *Class:* Fix. *Migration:* none.
+
+- **The durable-index pairing is `:pg-disk-log`.** Core reads the second `disk` in
+  a backend name as *out of core* where it means *durable*, and renamed both pairings
+  that carried it — its own `:disk` and this one — refusing the old spellings rather
+  than aliasing them, since an index axis names a directory *layout*. Nothing about
+  the store, the tables or the directory layout moves; the selector is the whole of
+  it. *Class:* Breaking, for an opts map naming `:pg-disk`.
+  *Migration:* `{:backend :pg-disk …}` → `{:backend :pg-disk-log …}`.
+
 ## 0.12.0 — 2026-08-23 — "the records and the image, in Postgres"
 
 First release of the Postgres sibling (`com.vaelii/postgres`) — an

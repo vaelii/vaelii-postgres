@@ -23,13 +23,13 @@ Two lanes, and they are independent — a KB can take either, both, or neither.
 
 The engine's `RecordStore` seam over three tables, so a KB's durable ground truth
 lives in a database an operator already runs. Core selects it as `:pg-memory` (the
-derived index in RAM, rebuilt on every open) or `:pg-disk` (the durable index, which
+derived index in RAM, rebuilt on every open) or `:pg-disk-log` (the durable index, which
 is **local** to the host running the writer and does not travel with the KB).
 
 What a server buys, stated narrowly:
 
 - **`COPY`** — `copy-sentexes!` loads at **95.8k records/s** where the per-record door
-  manages 4.1k/s and core's `:disk` store manages 52.7k/s. The strongest single
+  manages 4.1k/s and core's `:disk-log` store manages 52.7k/s. The strongest single
   argument for this backend.
 - **An operator's existing everything** — backup, PITR, replication, monitoring,
   access control, a query surface. None of it is ours to write.
@@ -42,7 +42,7 @@ contract, and a server does not weaken it by one clause — it just cannot fail 
 second writer fast the way a file lock does.
 
 The round trip is what the store's shape answers to: an uncached point read is
-**282.6 µs** against the `:disk` store's 0.26 µs warm, and **0.38 µs** on a fetch-LRU
+**282.6 µs** against the `:disk-log` store's 0.26 µs warm, and **0.38 µs** on a fetch-LRU
 hit. So the cache is the backend's viability rather than a tuning knob, the
 premise-strength cache is filled by the `premise-ids` walk that precedes every read of
 it, and the enumerations run on a server-side cursor because `reindex` and `recover`
@@ -84,7 +84,7 @@ A section written through this sink reads back frame-identical through any sourc
                          :user "vaelii" :schema "prod"}}))
 
 ;; …or the durable index, in a directory on THIS host
-(def kb (v/open-kb {:backend :pg-disk :dir "/var/lib/vaelii/kb"
+(def kb (v/open-kb {:backend :pg-disk-log :dir "/var/lib/vaelii/kb"
                     :pg {:jdbcUrl "jdbc:postgresql://db.internal/vaelii"}}))
 
 (v/assert kb '(likes Muffet Tom) 'CxTest)

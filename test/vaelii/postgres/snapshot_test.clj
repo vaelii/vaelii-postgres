@@ -5,6 +5,7 @@
   printed reason when none answers — `vaelii.postgres.test-util` is the gate and says
   how to point the suite at one."
   (:require [clojure.test :refer [deftest is]]
+            [next.jdbc :as jdbc]
             [vaelii.core :as v]
             [vaelii.impl.io.snapshot :as snap]
             [vaelii.impl.protocols :as p]
@@ -107,3 +108,24 @@
                       (.close ^java.io.Closeable sink))    ; no commit! — rollback
                     (is (nil? (snap/read-manifest (pg/pg-source ds image)))
                         "no committed manifest, so the image reads as absent"))))))
+
+;; ---- a database no sink has written --------------------------------------
+
+(deftest a-database-no-sink-has-written-reads-as-absent
+  ;; a database with no image tables is the seam's absent case, not an error:
+  ;; `read-manifest` answers nil, `load-index!` reads that as `:absent` and
+  ;; rebuilds, and `drop-image!` is the no-op its docstring claims.  Every other
+  ;; test creates the tables on entry, so drop them to stand in the first run's
+  ;; shoes; the next test's `ensure-schema!` puts them back.
+  (tu/served
+   (fn [ds]
+     (jdbc/execute-one! ds ["DROP TABLE IF EXISTS vaelii_snapshot_section"])
+     (jdbc/execute-one! ds ["DROP TABLE IF EXISTS vaelii_snapshot_manifest"])
+     (is (nil? (snap/read-manifest (pg/pg-source ds "never-written")))
+         "no tables reads as no manifest")
+     (let [kb (v/open-kb {:backend :memory})]
+       (is (= {:index :rebuild :reason :absent}
+              (snap/load-index! (pg/pg-source ds "never-written") (:index kb) "stamp"))
+           "so a first-run load-index! rebuilds rather than throwing"))
+     (is (do (pg/drop-image! ds "never-written") true)
+         "and drop-image! is quiet"))))

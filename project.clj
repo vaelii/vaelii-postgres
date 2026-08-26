@@ -1,8 +1,8 @@
-(defproject com.vaelii/postgres "0.12.0"
+(defproject com.vaelii/postgres "0.13.0"
   :description "Postgres targets for vaelii's storage seams, in two independent
                 lanes. The record store (vaelii.postgres.record-store) puts a KB's
                 durable ground truth in a database — core selects it as :pg-memory
-                or :pg-disk — with COPY on the bulk path, a fetch LRU in front of a
+                or :pg-disk-log — with COPY on the bulk path, a fetch LRU in front of a
                 round-trip point read, and cursor-streamed enumerations. The
                 snapshot sink (vaelii.postgres.snapshot) is a SnapshotSink /
                 SnapshotSource, so a KB image — the index projection today, any of
@@ -10,6 +10,15 @@
                 transactions and reads back the same way. An Apache-2.0 adapter on
                 the SSPL engine, depending on core, never depended on by it."
   :license {:name "Apache-2.0" :url "https://www.apache.org/licenses/LICENSE-2.0"}
+  :url "https://github.com/vaelii/vaelii-postgres"
+  :scm {:name "git" :url "https://github.com/vaelii/vaelii-postgres"}
+  ;; The POM's homepage and source link. Missing on the first cut, which is how
+  ;; `lein deploy` came to warn about `:url` with the release already promoted —
+  ;; and a Clojars coordinate keeps whatever POM it was published with.
+  :deploy-repositories [["clojars" {:url "https://repo.clojars.org/"
+                                    :username :env/clojars_username
+                                    :password :env/clojars_password
+                                    :sign-releases false}]]
   :source-paths ["src"]
   :test-paths   ["test"]
 
@@ -24,7 +33,7 @@
    ;; CONSUMER of this adapter resolves, and it is a floor rather than a convenience.
    ;; The record store implements core's Prefetching seam, which lands in 0.11.1 — so
    ;; that is the floor, and it stays a SNAPSHOT only until 0.11.1 is cut.
-   [com.vaelii/vaelii "0.12.0"]
+   [com.vaelii/vaelii "0.13.0"]
    ;; the sink's own deps — declared here, not leaned on through core, so a change
    ;; in core's deps cannot break this adapter's load
    [com.github.seancorfield/next.jdbc "1.3.1118"]

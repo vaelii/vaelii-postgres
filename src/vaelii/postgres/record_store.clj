@@ -76,7 +76,7 @@
   Apache-2.0, and an **adapter**: it implements the SSPL engine's
   `vaelii.impl.protocols/RecordStore` and is never depended on by it.  Core wires it in
   by a lazy `requiring-resolve`, so the engine never loads a JDBC driver unless a KB
-  selects `:pg-memory` or `:pg-disk`."
+  selects `:pg-memory` or `:pg-disk-log`."
   (:require [clojure.string :as str]
             [next.jdbc :as jdbc]
             [next.jdbc.connection :as conn]
@@ -471,24 +471,33 @@
     ;; the strengths ride the same walk.  `recover` calls `premise-strength` for every
     ;; handle this returns, and a round trip apiece is the difference between a scan
     ;; and an hour: filling the cache here costs the column the query already reads.
+    ;;
+    ;; The whole walk holds the fill (read) side: each row's install pairs with a
+    ;; server read that happened back at the cursor, so a lock taken per row would
+    ;; still let an unmark land between the two and be reinstalled after it — the
+    ;; reinstatement `mutating` exists to exclude.  Readers share the side; only a
+    ;; mutation waits, and the usual caller is the one writer (`recover`).
     (let [[add! finish] (roster/collector)]
-      (reduce-rows this (:premise-ids sql) []
-                   (fn [acc ^ResultSet rs]
-                     (let [id (.getLong rs 1)
-                           st (str->strength (.getString rs 2))]
-                       ;; **`st` may be nil**, and a ConcurrentHashMap refuses a null value:
-                       ;; a marked row whose strength column is NULL is reachable through
-                       ;; the protocol (a re-put carrying no `:strength` rewrites the column
-                       ;; and leaves the mark), and putting it here threw out of every
-                       ;; `recover` over that store — a KB that could not open at all.
-                       ;; `premise-strength` answers `:default` for an absent entry, which
-                       ;; is what the reference stores answer for this row.
-                       (when (and st (or (.containsKey prem-cache (ckey id))
-                                         (< (.size prem-cache) (long prem-cap))))
-                         (.put prem-cache (ckey id) st))
-                       (add! id)
-                       acc))
-                   nil)
+      (filling lock
+               (reduce-rows this (:premise-ids sql) []
+                            (fn [acc ^ResultSet rs]
+                              (let [id (.getLong rs 1)
+                                    st (str->strength (.getString rs 2))]
+                                ;; **`st` may be nil**, and a ConcurrentHashMap refuses a
+                                ;; null value: a marked row whose strength column is NULL
+                                ;; is reachable through the protocol (a re-put carrying no
+                                ;; `:strength` rewrites the column and leaves the mark),
+                                ;; and putting it here threw out of every `recover` over
+                                ;; that store — a KB that could not open at all.
+                                ;; `premise-strength` answers `:default` for an absent
+                                ;; entry, which is what the reference stores answer for
+                                ;; this row.
+                                (when (and st (or (.containsKey prem-cache (ckey id))
+                                                  (< (.size prem-cache) (long prem-cap))))
+                                  (.put prem-cache (ckey id) st))
+                                (add! id)
+                                acc))
+                            nil))
       (finish)))
 
   (premise-strength [_ id]

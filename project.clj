@@ -1,4 +1,4 @@
-(defproject com.vaelii/postgres "0.13.0"
+(defproject com.vaelii/postgres "0.15.0"
   :description "Postgres targets for vaelii's storage seams, in two independent
                 lanes. The record store (vaelii.postgres.record-store) puts a KB's
                 durable ground truth in a database — core selects it as :pg-memory
@@ -33,7 +33,7 @@
    ;; CONSUMER of this adapter resolves, and it is a floor rather than a convenience.
    ;; The record store implements core's Prefetching seam, which lands in 0.11.1 — so
    ;; that is the floor, and it stays a SNAPSHOT only until 0.11.1 is cut.
-   [com.vaelii/vaelii "0.13.0"]
+   [com.vaelii/vaelii "0.15.0"]
    ;; the sink's own deps — declared here, not leaned on through core, so a change
    ;; in core's deps cannot break this adapter's load
    [com.github.seancorfield/next.jdbc "1.3.1118"]

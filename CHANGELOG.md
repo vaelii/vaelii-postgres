@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.15.0 — 2026-09-01 — "nothing moved, and the family ships one number"
+
+The first cut of this adapter since 0.13.0 — it sat 0.14.0 out — and it carries no
+behaviour change, no schema change and nothing a caller can observe. A database written
+under 0.13.0 opens unchanged and the tables do not move.
+
+- **The sentex fixtures name the engine's slot, which is now `:polarity`.** The engine
+  renamed the sentex map's `:truth` slot to `:polarity` with `:positive` / `:negative`
+  values, and renamed the `AtomicSentex` record to `LiteralSentex`. Neither reaches this
+  store, and the reason is the property the store is built on: it freezes the **whole
+  record** with nippy and thaws it back type-identical, so what a field is called is not
+  something it has an opinion about, and a record frozen under 0.13.0 thaws back under
+  the new class without a migration. The only places the old spellings appeared were the
+  hand-built test fixtures and the schema docstring that promises the round-trip.
+  *Class:* **Fix** — a test and a docstring; no table, column or call moves.
+
+**The number.** The engine, the plugin and both adapters ship one version string, checked
+at the cut. Requires core 0.15.0.
+
 ## 0.13.0 — 2026-08-25 — "the absent database, a lock held, and a pairing renamed"
 
 - **A source over a database no sink has written answers absent, and cleanup is

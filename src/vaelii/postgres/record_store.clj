@@ -25,8 +25,8 @@
 
   * `vaelii_record (id, kind, frame, premise, strength)` — one row per record, `kind`
     splitting sentexes (0) from justifications (1), `frame` the **whole record**
-    nippy-frozen so a fetch thaws back type-identical (an `AtomicSentex` stays an
-    `AtomicSentex`).  `id` is **`bigint`**: handles are ints in the engine today, and a
+    nippy-frozen so a fetch thaws back type-identical (a `LiteralSentex` stays a
+    `LiteralSentex`).  `id` is **`bigint`**: handles are ints in the engine today, and a
     column type is the one place that decision becomes a migration on a table with
     100M rows in it.
   * a sentex's **assumption strength** rides the `strength` column as the authoritative

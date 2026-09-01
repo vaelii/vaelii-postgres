@@ -41,7 +41,7 @@
 ;; a sentex is any map the store persists by :id; real sentexes always carry a
 ;; :strength field, so the fixtures do too (see the ns docstring on get-sentex).
 (defn- sx [sentence strength]
-  {:sentence sentence :context 'CxTest :truth :true :strength strength})
+  {:sentence sentence :context 'CxTest :polarity :positive :strength strength})
 
 ;; ---- the oracle: identical to the in-memory reference -------------------
 
@@ -108,7 +108,7 @@
              (p/put-sentex store real-sx)
              (let [back (p/get-sentex store id)]
                (is (= (class real-sx) (class back))
-                   "an AtomicSentex thaws back an AtomicSentex, not a map")
+                   "a LiteralSentex thaws back a LiteralSentex, not a map")
                (is (= real-sx back)
                    "and equal in value, strength and all")))))))))
 
@@ -480,7 +480,7 @@
          (with-open [store (rec/pg-record-store spec)]
            (p/put-sentex store (assoc (sx '(p A) :default) :id 1))
            (p/mark-premise store 1 :monotonic)
-           (p/put-sentex store {:id 1 :sentence '(p A) :context 'CxTest :truth :true})
+           (p/put-sentex store {:id 1 :sentence '(p A) :context 'CxTest :polarity :positive})
            (is (= #{1} (p/premise-ids store)) "the walk completes and still rosters it")
            (is (= :default (p/premise-strength store 1))
                "and a marked row with no strength reads as :default, as the reference stores do")))))))

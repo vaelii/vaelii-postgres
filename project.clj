@@ -1,4 +1,4 @@
-(defproject com.vaelii/postgres "0.15.0"
+(defproject com.vaelii/postgres "0.15.1-SNAPSHOT"
   :description "Postgres targets for vaelii's storage seams, in two independent
                 lanes. The record store (vaelii.postgres.record-store) puts a KB's
                 durable ground truth in a database — core selects it as :pg-memory

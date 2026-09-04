@@ -7,7 +7,7 @@
 #
 # WHAT IT COVERS.  `lein check` compiles the namespaces on the source path, so
 # this pass is **`src`** — the adapter's one namespace (vaelii.postgres.snapshot),
-# which requires the engine's snapshot seam (vaelii.impl.io.snapshot).  Compiling
+# which requires the engine's snapshot protocol (vaelii.impl.io.snapshot).  Compiling
 # it loads core SOURCE through the checkouts/vaelii symlink
 # (scripts/link-checkouts.sh) under the same flag, so a reflection leak in the
 # code paths the adapter touches surfaces here too.  The test tree is not compiled

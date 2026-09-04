@@ -122,7 +122,7 @@
                      "and the copied rule and premise re-derive their conclusion")
                  (finally (v/close! kb)))))))))))
 
-(deftest an-import-lands-through-the-bulk-seam-and-holds-the-same-kb
+(deftest an-import-lands-through-the-bulk-protocol-and-holds-the-same-kb
   ;; `import!` writes its records through `protocols/BulkLoading` when the store has it,
   ;; which over Postgres is `COPY` instead of a round trip per frame.  What that must not
   ;; buy is a different KB: the same dump into a RAM KB and into a server-backed one,

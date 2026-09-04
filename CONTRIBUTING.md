@@ -28,12 +28,12 @@ pull request and blocks the merge if any is missing a sign-off.
 
 ## Where this adapter's behaviour is pinned
 
-This repo implements seams the engine owns, so a patch here answers to a
+This repo implements protocols the engine owns, so a patch here answers to a
 contract written somewhere else. `vaelii.impl.protocols` is that contract and the
 engine's in-memory store is the reference: the tests in `test/` assert that this
 adapter answers what the reference answers, op for op, and a change that moves an
 answer is a change to the engine's contract rather than to this repo. Say in the
-pull request which seam moved, and why the reference still agrees.
+pull request which protocol moved, and why the reference still agrees.
 
 The PostgreSQL JDBC driver and the server are dependencies, not sources: the
 SQL this repo issues is written here, and nothing is copied out of the driver's

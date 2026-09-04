@@ -66,6 +66,7 @@ summary() {
     kondo)      s="$(grep -oE 'errors: [0-9]+, warnings: [0-9]+' "$o" | tail -1)" ;;
     cljfmt)     s="all files formatted" ;;
     shellcheck) s="scripts clean" ;;
+    prose)      s="$(grep -oE '[0-9]+ of [0-9]+ allowed, [0-9]+ files remaining' "$o" | head -1)" ;;
     reflect)    s="$(grep -oE 'no reflection warnings.*' "$o" | head -1)" ;;
   esac
   echo "${s:-ok}"
@@ -144,6 +145,7 @@ check cljfmt     -- lein cljfmt check
 # same file — one list, so it cannot be complete for one caller and short for the
 # other. It also checks itself against the tree, both directions.
 check shellcheck -- bash scripts/lint-shellcheck.sh
+check prose      -- python3 scripts/check-prose.py
 check reflect    -- bash scripts/check-reflection.sh
 
 total=$((pass + fail))

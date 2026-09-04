@@ -4,7 +4,7 @@ name: test
 # live Postgres. Every db-touching test is gated on a reachable server and skips
 # with a printed reason otherwise, so this job stands up a `postgres:16` service
 # and points the suite at it with VAELII_PG_URL — without it the run is green but
-# vacuous. The tests require the engine (vaelii.core / the snapshot seam), so core
+# vacuous. The tests require the engine (vaelii.core / the snapshot protocol), so core
 # is checked out alongside and wired into checkouts/.
 #
 # Dispatch-only (matching the engine's policy for the private dev repos). Every

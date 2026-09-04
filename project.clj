@@ -1,5 +1,5 @@
-(defproject com.vaelii/postgres "0.15.0"
-  :description "Postgres targets for vaelii's storage seams, in two independent
+(defproject com.vaelii/postgres "0.16.0"
+  :description "Postgres targets for vaelii's storage protocols, in two independent
                 lanes. The record store (vaelii.postgres.record-store) puts a KB's
                 durable ground truth in a database — core selects it as :pg-memory
                 or :pg-disk-log — with COPY on the bulk path, a fetch LRU in front of a
@@ -31,9 +31,9 @@
    ;; the engine.  checkouts/vaelii -> ../vaelii shadows this with the dev-core
    ;; SOURCE, so a dev run reads whatever that tree is; the coordinate below is what a
    ;; CONSUMER of this adapter resolves, and it is a floor rather than a convenience.
-   ;; The record store implements core's Prefetching seam, which lands in 0.11.1 — so
+   ;; The record store implements core's Prefetching protocol, which lands in 0.11.1 — so
    ;; that is the floor, and it stays a SNAPSHOT only until 0.11.1 is cut.
-   [com.vaelii/vaelii "0.15.0"]
+   [com.vaelii/vaelii "0.16.0"]
    ;; the sink's own deps — declared here, not leaned on through core, so a change
    ;; in core's deps cannot break this adapter's load
    [com.github.seancorfield/next.jdbc "1.3.1118"]
@@ -67,6 +67,9 @@
    "lint-kondo"      ["shell" "clj-kondo" "--lint" "src" "test"]
    "lint-cljfmt"     ["cljfmt" "check"]
    "lint-shellcheck" ["shell" "bash" "scripts/lint-shellcheck.sh"]
+   ;; the prose budget: metaphor and aphorism against scripts/prose-baseline.txt.
+   ;; `lein lint-prose -- --update` lowers a stale budget; it never raises one
+   "lint-prose"      ["shell" "python3" "scripts/check-prose.py"]
    "lint-reflect"    ["shell" "bash" "scripts/check-reflection.sh"]
    "fix"             ["cljfmt" "fix"]
    ;; lint, then (only if green) the in-repo unit suite.

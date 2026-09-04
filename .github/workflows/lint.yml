@@ -6,7 +6,7 @@ name: lint
 # each to learn what one run already knows, and would lose the report.
 #
 # Unlike the engine's own lint, the reflection ratchet here AOT-compiles the
-# adapter's namespace, which requires the engine's snapshot seam — so core is
+# adapter's namespace, which requires the engine's snapshot protocol — so core is
 # checked out alongside and wired into checkouts/ (scripts/check-reflection.sh
 # states why). kondo, cljfmt and shellcheck are self-contained and don't need it.
 #

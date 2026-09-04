@@ -1,0 +1,14 @@
+# Per-file prose budget for scripts/check-prose.py -- the count of P1/P2/P3 hits each
+# file is allowed to carry while the tree is rewritten into literal technical language
+# (the engine's CONTRIBUTING.md §3.9).
+#
+# Format: <count>\t<path>\t<reason>.  A file absent from this list is pinned at ZERO,
+# so a new file and a rewritten one are clean by default.
+#
+# The ratchet: `--update` LOWERS a count and never raises one.  Raising a count is a
+# hand edit that carries its reason on the line, so a regression shows up in the diff
+# rather than in a refresh.  A file whose real count is below its budget fails until it
+# is re-pinned, which is what keeps the number on this page moving down.
+#
+# The tree is at ZERO, so this file has no entries. It stays because the ratchet is how
+# a batch of new prose gets landed without blocking on rewriting all of it at once.

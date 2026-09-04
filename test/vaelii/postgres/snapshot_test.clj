@@ -38,7 +38,7 @@
                             "and the committed manifest is readable"))))))))
 
 (deftest a-section-cross-loads-with-the-memory-medium
-  ;; the portability the seam exists to give: a section written to Postgres reads
+  ;; the portability the protocol exists to give: a section written to Postgres reads
   ;; back the same frames a memory medium holds for it
   (tu/served
    (fn [ds]
@@ -112,7 +112,7 @@
 ;; ---- a database no sink has written --------------------------------------
 
 (deftest a-database-no-sink-has-written-reads-as-absent
-  ;; a database with no image tables is the seam's absent case, not an error:
+  ;; a database with no image tables is the protocol's absent case, not an error:
   ;; `read-manifest` answers nil, `load-index!` reads that as `:absent` and
   ;; rebuilds, and `drop-image!` is the no-op its docstring claims.  Every other
   ;; test creates the tables on entry, so drop them to stand in the first run's

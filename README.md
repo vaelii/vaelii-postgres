@@ -9,7 +9,7 @@
 [![docstrings](.github/badges/docstrings.svg)](src/vaelii/postgres/snapshot.clj)
 <!-- badges:end -->
 
-Postgres targets for [vaelii](https://github.com/vaelii/vaelii)'s storage seams —
+Postgres targets for [vaelii](https://github.com/vaelii/vaelii)'s storage protocols —
 an **Apache-2.0 adapter** on the SSPL engine. It depends on core; core never
 depends on it.
 
@@ -21,14 +21,14 @@ Two lanes, and they are independent — a KB can take either, both, or neither.
 
 ### `vaelii.postgres.record-store` — the records in a database
 
-The engine's `RecordStore` seam over three tables, so a KB's durable ground truth
+The engine's `RecordStore` protocol over three tables, so a KB's durable ground truth
 lives in a database an operator already runs. Core selects it as `:pg-memory` (the
 derived index in RAM, rebuilt on every open) or `:pg-disk-log` (the durable index, which
 is **local** to the host running the writer and does not travel with the KB).
 
 What a server buys, stated narrowly:
 
-- **`COPY`** — `copy-sentexes!` loads at **95.8k records/s** where the per-record door
+- **`COPY`** — `copy-sentexes!` loads at **95.8k records/s** where the per-record entry point
   manages 4.1k/s and core's `:disk-log` store manages 52.7k/s. The strongest single
   argument for this backend.
 - **An operator's existing everything** — backup, PITR, replication, monitoring,
@@ -50,14 +50,14 @@ walk all of them.
 
 ### `vaelii.postgres.snapshot` — the KB image in a database
 
-A `SnapshotSink` / `SnapshotSource` over the engine's snapshot seam
-(`vaelii.impl.io.snapshot`): the index projection today, and any of the seam's named
+A `SnapshotSink` / `SnapshotSource` over the engine's snapshot protocol
+(`vaelii.impl.io.snapshot`): the index projection today, and any of the protocol's named
 sections as they land. This is the lane with no round trip in it — an image is
 `O(sections)` bulk blob transfers, not `O(records)` tiny probes — so it answers "put
 my KB in Postgres" for backup or shipping whether or not the records live in a
 database at all.
 
-Two properties the seam gives, and a database sharpens:
+Two properties the protocol gives, and a database sharpens:
 
 - **One transaction, manifest last.** The whole image writes inside a single
   transaction and the manifest row commits it, so a crash leaves no manifest and
@@ -125,7 +125,7 @@ rolls the whole image back. Use `with-open`.
 ## Development
 
 `checkouts/vaelii -> ../vaelii` shadows the core dependency with dev-core source,
-so the seam is the checkout's, not a jar's.
+so the protocol is the checkout's, not a jar's.
 
 ```
 lein test        # db-touching tests skip with a printed reason when no server

@@ -1,5 +1,30 @@
 # Changelog
 
+## 0.16.0 — 2026-09-04 — "the prose says what the code does, and nothing else moves"
+
+No behaviour change, no schema change and nothing a caller can observe. A database written
+under 0.15.0 opens unchanged and the tables do not move.
+
+- **The prose here is reworded to say what the code does.** Comments, docstrings,
+  changelog entries and test names now state the mechanism in literal technical language,
+  and `scripts/check-prose.py` — the engine's check, adapted to this tree's layout — runs
+  as the `prose` row in `scripts/lint.sh` with a `lein lint-prose` alias. The two
+  metaphors this repo carried are replaced by what each one named: the engine's storage
+  protocols (`RecordStore`, `SnapshotSink` / `SnapshotSource`) and the public entry point
+  a caller reaches them through. The evaluative phrasings become statements of what the
+  assertion checks. *Class:* **Fix** — docstrings and test names only; no table, column or
+  call moves. *Migration:* none.
+
+**The number.** The engine, the plugin and both adapters ship one version string, checked
+at the cut. Requires core 0.16.0, which carries three **Breaking** entries and one
+**Refusal**: a `:missing-adapter` refusal split out of `:unknown-backend`, a CLI operand
+count moved from `:unknown-option` to `:bad-args`, `different` no longer provable against
+an unpinned `indeterminate_term`, and a rule concluding an indeterminacy from a
+`different` antecedent refused as `:not-stratified`. The first reaches this repo in one
+direction only: with this adapter on the classpath, a `:pg` records axis resolves and no
+refusal is raised. The other three read a KB rather than a store and reach nothing
+here.
+
 ## 0.15.0 — 2026-09-01 — "nothing moved, and the family ships one number"
 
 The first cut of this adapter since 0.13.0 — it sat 0.14.0 out — and it carries no
@@ -23,7 +48,7 @@ at the cut. Requires core 0.15.0.
 
 - **A source over a database no sink has written answers absent, and cleanup is
   the no-op it claims.** `read-manifest` on a database with no image tables
-  answers nil — the seam's absent case — so a first-run `load-index!` reports
+  answers nil — the protocol's absent case — so a first-run `load-index!` reports
   `{:index :rebuild :reason :absent}` instead of raising `undefined_table`, and
   `drop-image!` skips a table that is not there, as its docstring says.
   *Class:* Fix. *Migration:* none.
@@ -49,14 +74,14 @@ at the cut. Requires core 0.15.0.
 
 First release of the Postgres sibling (`com.vaelii/postgres`) — an
 **Apache-2.0** adapter on the SSPL engine. It depends on core; core never depends
-on it. Requires core **0.12.0**: the record store answers seams that land there — the
+on it. Requires core **0.12.0**: the record store answers protocols that land there — the
 bulk sink, the tallies, the prefetch hint — and the `:pg` records axis is core's.
 The family releases in lockstep, one version string across the engine, the plugin
 and the two adapters, which is why a first release is numbered 0.12.0.
 
 - **A Postgres record store: `:pg-memory` and `:pg-disk`.**
   `vaelii.postgres.record-store/pg-record-store` implements the engine's `RecordStore`
-  seam over three tables — `vaelii_record (id, kind, frame, premise, strength)` with
+  protocol over three tables — `vaelii_record (id, kind, frame, premise, strength)` with
   the whole record nippy-frozen and the assumption strength on its own authoritative
   column, plus provenance and a high-water meta row. `id` is **`bigint`**, which is the
   one decision here that would otherwise become an `ALTER TABLE` on 100M rows. A KB
@@ -66,14 +91,14 @@ and the two adapters, which is why a first release is numbered 0.12.0.
 
   - **`COPY` is what a server is for.** `copy-sentexes!` / `copy-justifications!` load
     through `COPY … FROM STDIN BINARY` at **95.8k records/s** on 20,000 records against
-    a local server, where the per-record door manages 4.1k/s and core's own `:disk`
+    a local server, where the per-record entry point manages 4.1k/s and core's own `:disk`
     store manages 52.7k/s. It is a load rather than an upsert — `COPY` has no `ON
     CONFLICT` — and a record's `:strength` rosters it as a premise there, which is what
     a dump's strength means and what a later `recover` reads.
-  - **And `import!` reaches it, through core's `BulkLoading` seam.** The store answers
+  - **And `import!` reaches it, through core's `BulkLoading` protocol.** The store answers
     `open-sentex-sink` / `open-justification-sink` with the copy stream itself — the
     connection and the `COPY` held open for the sink's lifetime, `:batch` rows buffered
-    between writes into it — so a corpus loaded through the KB's own door takes the fast
+    between writes into it — so a corpus loaded through the KB's own entry point takes the fast
     path without an application naming this namespace. `copy-sentexes!` /
     `copy-justifications!` are the same sink with a `doseq` around it. Through `import!`
     on a 30k-record dump, `{:belief? false}`: **2,784 → 17,882 records/s**, against
@@ -129,15 +154,15 @@ and the two adapters, which is why a first release is numbered 0.12.0.
 
 - **A Postgres snapshot sink and source.** `vaelii.postgres.snapshot` provides
   `pg-sink` (a `SnapshotSink` writing a KB image to a database) and `pg-source` (a
-  read-only `SnapshotSource` reading it back), over the engine's snapshot seam
+  read-only `SnapshotSource` reading it back), over the engine's snapshot protocol
   (`vaelii.impl.io.snapshot`). It puts a KB image in Postgres — the index projection
-  today, and any of the seam's named sections as they land. This is the Postgres lane
+  today, and any of the protocol's named sections as they land. This is the Postgres lane
   with no round trip in it: an image is `O(sections)` bulk blob transfers, not
   `O(records)` tiny probes, so "put my KB in Postgres" — for backup, replication, PITR,
   or shipping a corpus to another host — is answered here whether or not the records
   live in a database at all. *Class:* Additive — a new snapshot target; nothing in core changes.
 
-  Two properties the seam gives and a database sharpens:
+  Two properties the protocol gives and a database sharpens:
   - **One transaction, manifest last.** The whole image writes inside a single
     transaction and the manifest row commits it, so a crash leaves no manifest and
     the source rebuilds — the file sink's "write the manifest last" rule enforced by
@@ -154,4 +179,4 @@ a round trip per trie node, which is the wrong shape for the query path. `:pg-di
 the durable index over Postgres records, and those index files are **local** to the host
 running the writer — they do not travel with the KB, and a second host rebuilds them.
 
-Docs: this repo's `README.md`; the seam is [core's storage.md](https://github.com/vaelii/vaelii/blob/main/docs/storage.md).
+Docs: this repo's `README.md`; the protocol is [core's storage.md](https://github.com/vaelii/vaelii/blob/main/docs/storage.md).

@@ -10,7 +10,7 @@
   behaviour rather than to a re-derivation of the contract.  The rest is what only a
   networked store has to answer for: that a reopen never reissues a handle, that the
   enumerations stream rather than buffer, and that `COPY` lands the same records the
-  per-record door does."
+  per-record entry point does."
   (:require [clojure.string :as str]
             [clojure.test :refer [deftest is testing]]
             [next.jdbc :as jdbc]
@@ -134,7 +134,7 @@
              (is (= :monotonic (:strength (p/get-sentex store a)))
                  "and is reflected on the fetched record"))))))))
 
-(deftest a-batch-annotate-lands-what-the-one-row-door-lands
+(deftest a-batch-annotate-lands-what-the-one-row-entry-point-lands
   ;; `mark-premise-batch` / `put-provenance-batch` are one statement where the protocol's
   ;; own ops are a round trip apiece, so what has to be pinned is that nothing about the
   ;; result moves — the phantom-premise guard above all, which over a batch cannot read an
@@ -157,7 +157,7 @@
              ;; the cache is filled from the RETURNING, so a handle the statement did not
              ;; touch must not answer `premise-strength` for a handle `premise-ids` omits
              (is (= :default (p/premise-strength store gone))
-                 "an unmarked handle reads as the default, not as something cached"))
+                 "an unmarked handle returns the default, not something cached"))
            (testing "and the record reflects the new strength, the cache having been evicted"
              (is (= :monotonic (:strength (p/get-sentex store a)))))
            (testing "a second batch upgrades a strength already marked"
@@ -286,14 +286,14 @@
              (is (= 500 (count (p/premise-ids store)))
                  "the premise walk streams too, and fills the strength cache as it goes")
              (is (= :default (p/premise-strength store 250))
-                 "which is what the strength read after it costs nothing"))))))))
+                 "so the strength read after it issues no query"))))))))
 
 ;; ---- COPY: the bulk ingest path -----------------------------------------
 
-(deftest copy-lands-the-same-records-the-per-record-door-does
+(deftest copy-lands-the-same-records-the-per-record-entry-point-does
   ;; `COPY … FROM STDIN BINARY` is the ingest path a server has and the others do not.
   ;; What it must not do is land anything different: the oracle here is the store's own
-  ;; per-record door, run over the same records in another schema.
+  ;; per-record entry point, run over the same records in another schema.
   (tu/served
    (fn [ds]
      (let [records (mapv (fn [i] (assoc (sx (list 'p i) (if (even? i) :default :monotonic))
@@ -321,7 +321,7 @@
                        (is (= 50 (rec/copy-justifications! store deducts)))
                        (observe store)))]
        (is (= by-put by-copy)
-           "a COPY load observes as the per-record door's, premise marks included")))))
+           "a COPY load observes as the per-record entry point's, premise marks included")))))
 
 (deftest copy-moves-the-handle-counter
   ;; a bulk load that left the counter behind would hand out a handle the load just used,
@@ -534,7 +534,7 @@
 
 (deftest a-handle-this-store-could-not-have-issued-is-answered-not-thrown
   ;; `id-ok?`'s contract, which the fetches kept and four other ops did not: an informant
-  ;; keyword reaches these doors and both reference stores make them no-ops.
+  ;; keyword reaches these entry points and both reference stores make them no-ops.
   (tu/served
    (fn [ds]
      (tu/with-schema ds "vaelii_rec_badid"
@@ -651,13 +651,13 @@
 ;; ---- the roster, and the questions that do not need it -------------------
 
 (deftest the-enumerations-answer-a-compressed-roster
-  ;; The seam says a `java.util.Set`, not a `PersistentHashSet` — and this is the store
+  ;; The protocol says a `java.util.Set`, not a `PersistentHashSet` — and this is the store
   ;; the difference is for.  A hash set of boxed handles retains 48–75 bytes apiece, so
   ;; the roster of the corpus a server backend exists to hold is gigabytes of the
   ;; caller's heap before a record is fetched; the compressed one is a fraction of a byte
   ;; a handle over the near-contiguous run `next-id` mints.  What is asserted here is not
   ;; the size — core's `roster_test` owns that — but that this store returns one, and that
-  ;; it reads as the set the reference backend answers.
+  ;; it equals the set the reference backend answers.
   (tu/served
    (fn [ds]
      (with-store ds "vaelii_rec_roster"
@@ -669,7 +669,7 @@
                                 ["justification-ids" (p/justification-ids store)]
                                 ["premise-ids" (p/premise-ids store)]]]
              (is (roster/roster? got) (str label " answers a compressed roster")))
-           (testing "and it reads as the set it replaces"
+           (testing "and it equals the set it replaces"
              (is (= (set ids) (p/sentex-ids store)))
              (is (= (p/sentex-ids store) (set ids)) "equal whichever side it is on")
              (is (= #{j} (p/justification-ids store)))

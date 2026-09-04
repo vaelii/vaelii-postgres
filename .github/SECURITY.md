@@ -20,7 +20,7 @@ Only the latest release (and `main`) receive security fixes.
 
 ## Scope
 
-`vaelii-postgres` is an Apache-2.0 adapter on the vaelii snapshot seam: it writes
+`vaelii-postgres` is an Apache-2.0 adapter on the vaelii snapshot protocol: it writes
 a KB image to Postgres and reads it back (`vaelii.postgres.snapshot`). It depends
 on the [vaelii](https://github.com/vaelii/vaelii) engine and is never depended on
 by it; it has no network surface of its own beyond the JDBC connection the caller

@@ -5,11 +5,11 @@
 #
 #   checkouts/vaelii -> ../../vaelii
 #
-# The adapter reaches into `vaelii.impl.io.snapshot`, a seam core is free to
+# The adapter reaches into `vaelii.impl.io.snapshot`, a protocol core is free to
 # change.  A checkout is how that break surfaces the moment it lands rather than
 # at somebody's next `lein install`.  A stale snapshot is the failure it avoids,
 # and that failure is quiet: the jar does not fail loudly, it silently lacks
-# whatever the seam grew since it was built.
+# whatever the protocol grew since it was built.
 #
 # checkouts/ is gitignored, so the link is not committed — rerun after a fresh
 # clone.  Idempotent (ln -snf).  A missing target is skipped with a WARN unless

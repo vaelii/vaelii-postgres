@@ -1,7 +1,7 @@
 ;; SPDX-License-Identifier: Apache-2.0
 ;; Copyright © 2026 Vaelii LLC and the Vaelii contributors.
 (ns vaelii.postgres.record-store
-  "A Postgres target for the engine's **record store** seam
+  "A Postgres target for the engine's **record store** protocol
   (`vaelii.impl.protocols/RecordStore`) — the durable ground truth a KB is recovered
   from: canonical sentexes and justifications, keyed by integer handle, in a database
   an operator already runs.
@@ -314,7 +314,7 @@
 (defn- id-roster
   "Every handle `sql` selects, as a `vaelii.impl.roster` set.
 
-  A set and not a stream, because the seam says so: `recover` tests membership in the
+  A set and not a stream, because the protocol says so: `recover` tests membership in the
   live handles for every premise it roots and for every antecedent of every
   justification (`contains?`), which no lazy sequence answers.  What streaming buys is
   the *walk* — the driver never holds the whole result.
@@ -413,7 +413,7 @@
   ;; Guarded like the fetches: `id-ok?`'s contract is that a handle this store could
   ;; never have issued reads as nil rather than throwing, and the memory store makes
   ;; these four ops no-ops for one.  Unguarded, `(long id)` turns an informant keyword
-  ;; into a ClassCastException from a door that is supposed to be quiet.
+  ;; into a ClassCastException from an entry point that is supposed to be quiet.
   (put-provenance [_ id prov]
     (when (id-ok? id)
       (jdbc/execute-one! ds [(:put-prov sql) (long id) (nippy/freeze prov)]))
@@ -760,14 +760,14 @@
   holds raises rather than being overwritten.
 
   **A record's `:strength` rosters it as a premise here**, where `put-sentex` leaves the
-  mark to `mark-premise`.  The two doors are asked different questions: the engine
+  mark to `mark-premise`.  The two entry points are asked different questions: the engine
   stores a fact and marks it at the choke point one line later, while a bulk load has no
   such line — the strength a dump's record carries *is* what a later `recover` reads as
   its assumption, and re-asking for it a handle at a time is a round trip per record.
   `{:premises? false}` loads the strengths without the marks, for records that are
   derivations rather than assumptions.  `:batch` rows per buffer (default 10000).
 
-  This is the seam's own front door, for an application holding a corpus already.  The
+  This is the protocol's own public entry point, for an application holding a corpus already.  The
   **engine** reaches the same path without knowing this namespace exists, through
   `protocols/BulkLoading` — which is what `import!` writes its records through."
   ([store sentexes] (copy-sentexes! store sentexes {}))

@@ -7,7 +7,7 @@ a pseudo-cleft that delays the subject are all decodable only by inference, so t
 check fails on them. The rule and the substitution table are the engine repo's CONTRIBUTING.md §3.9, which
 this repo is held to as well.
 
-Three codes:
+Four codes:
 
   P1  A metaphor where the mechanism has a name. `door` is two different things --
       an API entry point (`assert`, `match`, the served handlers) and a validation
@@ -21,6 +21,12 @@ Three codes:
 
   P3  Pseudo-cleft -- `What holds the wrap is a version pin` -- which withholds the
       subject until after the verb.
+
+  P4  A copula with `are` straight after it -- `is are`, `be are`, `are are`. Not a
+      style rule: no sentence needs the pair, so it marks a phrase substituted in
+      without its verb being fixed. P1 and P2 name what to write instead, and a
+      substitution made across the tree at once is how their hits get fixed, so the
+      pass that fixes them is the one that leaves these.
 
 The sentence-form rules that no regex reaches (name the subject, no fragment, one claim
 per sentence, mechanism before reason) are held by review, not by this script.
@@ -97,6 +103,18 @@ P2 = re.compile(
 
 P3 = re.compile(r"(^|\. )What [a-z][a-z ,'`-]{5,60} is (a|the|an|what|not) ")
 
+# A copula with `are` straight after it -- `is are`, `be are`, `are are`. No sentence
+# needs the pair, so a hit is a phrase substituted in without its verb being fixed: the
+# engine tree took 20 of them from one pass that rewrote `read as a` to `are
+# indistinguishable from a` and left `is read as a` standing as `is are indistinguishable
+# from a`. Shapes like `does not are` and `a are` are NOT here, because ellipsis makes
+# them ordinary English: "the 118 that do not are nouns" elides "carry a signature".
+P4 = re.compile(r"(?<!-)\b(?:is|was|be|been|are|being)\s+are\b", re.I)
+# `clojure.test` publishes both `is` and `are`, so `:refer [deftest testing is are]` is a
+# require and not a sentence. The hyphen lookbehind above is for the other collision, a
+# compound ending in a copula: OpenCyc's `many states-of-being are conceptualized`.
+P4_NOT = re.compile(r":refer")
+
 
 def scan_files():
     """Every path the check reads, repo-relative and sorted."""
@@ -132,10 +150,12 @@ def hits_in(rel):
     except OSError:
         return out
     for i, line in enumerate(lines, 1):
-        for code, pat in (("P1", P1), ("P2", P2), ("P3", P3)):
+        for code, pat in (("P1", P1), ("P2", P2), ("P3", P3), ("P4", P4)):
             for m in pat.finditer(line):
                 text = m.group(0).strip()
                 if code == "P1" and P1_NOT.search(m.group(0)):
+                    continue
+                if code == "P4" and P4_NOT.search(line):
                     continue
                 out.append((i, code, text))
     return out

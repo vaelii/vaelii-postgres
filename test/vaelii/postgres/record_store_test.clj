@@ -41,7 +41,7 @@
 ;; a sentex is any map the store persists by :id; real sentexes always carry a
 ;; :strength field, so the fixtures do too (see the ns docstring on get-sentex).
 (defn- sx [sentence strength]
-  {:sentence sentence :context 'CxTest :polarity :positive :strength strength})
+  {:sentence sentence :context 'CxTest :strength strength})
 
 ;; ---- the oracle: identical to the in-memory reference -------------------
 
@@ -133,6 +133,40 @@
                  "the premise strength recovered from the column")
              (is (= :monotonic (:strength (p/get-sentex store a)))
                  "and is reflected on the fetched record"))))))))
+
+;; A frame is the whole record nippy froze, so a row carries every field the record had
+;; when it was written: `:polarity`, a rule's `:sentence`, and a justification's `:out`
+;; with the rule handle among its `:antecedents`.  A fetch passes the thawed record
+;; through `codec/decode-sentex` / `codec/decode-justification`, which drop them.
+(deftest a-row-carrying-removed-fields-reads-as-the-current-record
+  (tu/served
+   (fn [ds]
+     (let [kb (v/open-kb {:backend :memory :space (rand-int 100000)})]
+       (v/assert kb '(set/forwardRule (implies (likes ?x ?y) (knows ?x ?y))) 'CxTest)
+       (v/assert kb '(likes Muffet Tom) 'CxTest)
+       (v/assert kb '(not (likes Tom Muffet)) 'CxTest)
+       (let [recs  (:records kb)
+             sxs   (mapv #(p/get-sentex recs %) (sort (p/sentex-ids recs)))
+             js    (filterv #(integer? (:informant %))
+                            (map #(p/get-justification recs %) (sort (p/justification-ids recs))))
+             wide  (fn [s]
+                     (cond-> (assoc s :polarity (if (= 'not (first (v/sentence-of s)))
+                                                  :negative
+                                                  :positive))
+                       (:antecedent s) (assoc :sentence (v/sentence-of s))))
+             wide-j (fn [j] (assoc j :antecedents (conj (vec (:antecedents j)) (:informant j))
+                                   :out #{}))]
+         (is (seq js) "the rule fired, so a justification names it as its informant")
+         (tu/with-schema ds "vaelii_rec_removed_fields"
+           (fn [spec]
+             (with-open [store (rec/pg-record-store spec)]
+               (doseq [s sxs] (p/put-sentex store (wide s)))
+               (doseq [j js] (p/put-justification store (wide-j j))))
+             (with-open [store (rec/pg-record-store spec)]
+               (is (= sxs (mapv #(p/get-sentex store (:id %)) sxs))
+                   "each sentex reads back without `:polarity` or a rule's `:sentence`")
+               (is (= js (mapv #(p/get-justification store (:id %)) js))
+                   "each justification reads back without `:out` or the rule among its antecedents")))))))))
 
 (deftest a-batch-annotate-lands-what-the-one-row-entry-point-lands
   ;; `mark-premise-batch` / `put-provenance-batch` are one statement where the protocol's
@@ -480,7 +514,7 @@
          (with-open [store (rec/pg-record-store spec)]
            (p/put-sentex store (assoc (sx '(p A) :default) :id 1))
            (p/mark-premise store 1 :monotonic)
-           (p/put-sentex store {:id 1 :sentence '(p A) :context 'CxTest :polarity :positive})
+           (p/put-sentex store {:id 1 :sentence '(p A) :context 'CxTest})
            (is (= #{1} (p/premise-ids store)) "the walk completes and still rosters it")
            (is (= :default (p/premise-strength store 1))
                "and a marked row with no strength reads as :default, as the reference stores do")))))))

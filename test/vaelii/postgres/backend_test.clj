@@ -38,7 +38,7 @@
 (defn- populate!
   "A rule, the fact that fires it, and one unrelated fact."
   [kb]
-  (v/assert kb '(implies (p ?x) (q ?x)) 'CxTest)
+  (v/assert kb '(implies (p ?x) (q ?x)) 'CxTest {:direction :forward})
   (v/assert kb '(p Foo) 'CxTest)
   (v/assert kb '(likes Felix Tuna) 'CxTest)
   kb)

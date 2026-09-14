@@ -1,4 +1,4 @@
-(defproject com.vaelii/postgres "0.16.0"
+(defproject com.vaelii/postgres "0.19.0"
   :description "Postgres targets for vaelii's storage protocols, in two independent
                 lanes. The record store (vaelii.postgres.record-store) puts a KB's
                 durable ground truth in a database — core selects it as :pg-memory
@@ -27,18 +27,18 @@
   :global-vars {*warn-on-reflection* true}
 
   :dependencies
-  [[org.clojure/clojure "1.12.5"]
+  [[org.clojure/clojure "1.12.6"]
    ;; the engine.  checkouts/vaelii -> ../vaelii shadows this with the dev-core
    ;; SOURCE, so a dev run reads whatever that tree is; the coordinate below is what a
    ;; CONSUMER of this adapter resolves, and it is a floor rather than a convenience.
    ;; The record store implements core's Prefetching protocol, which lands in 0.11.1 — so
    ;; that is the floor, and it stays a SNAPSHOT only until 0.11.1 is cut.
-   [com.vaelii/vaelii "0.16.0"]
+   [com.vaelii/vaelii "0.19.0"]
    ;; the sink's own deps — declared here, not leaned on through core, so a change
    ;; in core's deps cannot break this adapter's load
    [com.github.seancorfield/next.jdbc "1.3.1118"]
-   [org.postgresql/postgresql "42.7.11"]
-   [com.taoensso/nippy "3.8.1"]
+   [org.postgresql/postgresql "42.7.13"]
+   [com.taoensso/nippy "3.9.0"]
    ;; the record store's pool.  A live records backend is one writer and N readers by
    ;; the engine's single-writer contract, and a db-spec without a pool opens a
    ;; connection per op — a TCP and auth handshake in front of every point read.
@@ -84,7 +84,7 @@
    ;; depending on this adapter, where it can win SLF4J's provider race against the
    ;; host's own backend and silence that instead (core holds the same line).
    :dev  {:dependencies [[nrepl "1.7.0"]
-                         [org.slf4j/slf4j-nop "2.0.17"]]
+                         [org.slf4j/slf4j-nop "2.0.19"]]
           :plugins [[dev.weavejester/lein-cljfmt "0.16.5"]
                     [lein-shell "0.5.0"]]}
    ;; Tests reach a live Postgres only when one is configured (VAELII_PG_URL or

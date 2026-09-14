@@ -26,9 +26,11 @@
   * `vaelii_record (id, kind, frame, premise, strength)` — one row per record, `kind`
     splitting sentexes (0) from justifications (1), `frame` the **whole record**
     nippy-frozen so a fetch thaws back type-identical (a `LiteralSentex` stays a
-    `LiteralSentex`).  `id` is **`bigint`**: handles are ints in the engine today, and a
-    column type is the one place that decision becomes a migration on a table with
-    100M rows in it.
+    `LiteralSentex`).  A fetch passes the thawed record through the engine's codec
+    (`codec/decode-sentex`, `codec/decode-justification`), which drops the fields the
+    running engine's record types do not have.  `id` is **`bigint`**: handles are ints
+    in the engine today, and a column type is the one place that decision becomes a
+    migration on a table with 100M rows in it.
   * a sentex's **assumption strength** rides the `strength` column as the authoritative
     value and is `assoc`ed back onto the thawed record on read — so `mark-premise` is a
     one-row column update rather than a frame rewrite, and the column and the frame
@@ -82,6 +84,7 @@
             [next.jdbc.connection :as conn]
             [next.jdbc.result-set :as rs]
             [taoensso.nippy :as nippy]
+            [vaelii.impl.disk.codec :as codec]
             [vaelii.impl.disk.durability :as dur]
             [vaelii.impl.profile :as prof]
             [vaelii.impl.protocols :as p]
@@ -368,7 +371,7 @@
                      (when-let [row (jdbc/execute-one! ds [(:get-sentex sql) (long id)] lower-maps)]
                        ;; the column is authoritative — assoc it back, so a `mark-premise`
                        ;; that touched only the column is reflected without a frame rewrite
-                       (let [sx (assoc (nippy/thaw ^bytes (:frame row))
+                       (let [sx (assoc (codec/decode-sentex (nippy/thaw ^bytes (:frame row)))
                                        :strength (str->strength (:strength row)))]
                          (.put sx-cache k sx)
                          sx)))))))
@@ -398,7 +401,7 @@
         (or (.get j-cache k)
             (filling lock
                      (when-let [row (jdbc/execute-one! ds [(:get-just sql) (long id)] lower-maps)]
-                       (let [d (nippy/thaw ^bytes (:frame row))]
+                       (let [d (codec/decode-justification (nippy/thaw ^bytes (:frame row)))]
                          (.put j-cache k d)
                          d)))))))
 
@@ -559,7 +562,7 @@
                          (with-open [^ResultSet rs (.executeQuery ps)]
                            (while (.next rs)
                              (.put j-cache (ckey (.getLong rs 1))
-                                   (nippy/thaw ^bytes (.getBytes rs 2))))))))))))
+                                   (codec/decode-justification (nippy/thaw ^bytes (.getBytes rs 2)))))))))))))
     nil)
 
   (prefetch-sentexes! [_ ids]
@@ -586,7 +589,7 @@
                          (with-open [^ResultSet rs (.executeQuery ps)]
                            (while (.next rs)
                              (let [id (ckey (.getLong rs 1))
-                                   sx (assoc (nippy/thaw ^bytes (.getBytes rs 2))
+                                   sx (assoc (codec/decode-sentex (nippy/thaw ^bytes (.getBytes rs 2)))
                                              :strength (str->strength (.getString rs 3)))]
                                (.put sx-cache id sx)))))))))))
     nil)

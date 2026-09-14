@@ -1,5 +1,44 @@
 # Changelog
 
+## 0.19.0 — 2026-09-14 — "a row an earlier core wrote reads back as the current record"
+
+The first cut of this adapter since 0.16.0; it sat 0.17.0 through 0.18.1 out. No table or
+column moves, and a database written under 0.16.0 opens unchanged.
+
+- **A row written under an earlier core reads back as the current record.** A frame is the
+  whole record nippy froze, so a row carries every field the record type had when it was
+  written. Core 0.19.0 drops a sentex's `:polarity`, a rule's `:sentence` and a
+  justification's `:out`, and a rule firing's justification no longer lists the rule
+  handle among its `:antecedents`. A fetch now passes the thawed record through the
+  engine's `codec/decode-sentex` / `codec/decode-justification`, which drop those fields
+  and take the rule out of `:antecedents`, so a fetch from an upgraded database returns
+  the record core 0.19.0 would have written. *Class:* **Fix**. *Migration:* none; requires core 0.19.0.
+
+- **The dependencies move to Clojure 1.12.6, nippy 3.9.0, the PostgreSQL JDBC driver
+  42.7.13 and slf4j-nop 2.0.19.** nippy matches the engine's pinned 3.9.0, so the
+  reflection check compiles the engine against the nippy it ships with. *Class:* **Fix**.
+  *Migration:* none.
+
+- **The backend suite declares its rule forward.** Core 0.18.0 made a bare `implies` rule
+  backward-only, so the persist and recover tests' rule stopped materializing its
+  conclusion on assert and the tests read empty. `populate!` asserts the rule with a
+  forward direction. *Class:* **Fix** — a test; no table, column or call moves.
+  *Migration:* none.
+
+- **The prose check's P4 refuses a copula with `are` straight after it.** A tree-wide
+  substitution that rewrites a phrase without fixing its verb leaves the old copula
+  standing before `are`, and no sentence needs the pair. A `clojure.test` require that
+  refers both the `is` and the `are` macros, and a hyphenated compound ending in a
+  copula, are excluded. *Class:* **Additive** — lint only. *Migration:* none.
+
+**The number.** This adapter ships at the engine's version and pins core 0.19.0, which
+carries five **Breaking** entries and four **Refusals**. Three of the Breaking entries
+change the fields of the records this store freezes: a sentex drops `:polarity`, a rule
+drops `:sentence`, and a justification drops `:out` and the rule handle from
+`:antecedents`. The first entry above is how those three reach this store. The other two
+Breaking entries and the four Refusals read a KB rather than a store and reach nothing
+here.
+
 ## 0.16.0 — 2026-09-04 — "the prose says what the code does, and nothing else moves"
 
 No behaviour change, no schema change and nothing a caller can observe. A database written

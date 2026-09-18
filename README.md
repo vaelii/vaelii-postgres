@@ -51,7 +51,7 @@ walk all of them.
 ### `vaelii.postgres.snapshot` — the KB image in a database
 
 A `SnapshotSink` / `SnapshotSource` over the engine's snapshot protocol
-(`vaelii.impl.io.snapshot`): the index projection today, and any of the protocol's named
+(`vaelii.impl.types.snapshot`): the index projection today, and any of the protocol's named
 sections as they land. This is the lane with no round trip in it — an image is
 `O(sections)` bulk blob transfers, not `O(records)` tiny probes — so it answers "put
 my KB in Postgres" for backup or shipping whether or not the records live in a
@@ -65,7 +65,7 @@ Two properties the protocol gives, and a database sharpens:
   by the database rather than by ordering.
 - **Validate or discard.** The records fingerprint and index-layout version ride
   a column and the manifest; a mismatched image is discarded and the caller
-  rebuilds, never trusted. The check is the engine's shared `snapshot/decision`.
+  rebuilds, never trusted. The check is the engine's shared `vaelii.impl.io.snapshot/decision`.
 
 A section written through this sink reads back frame-identical through any source
 — file, memory, or Postgres.

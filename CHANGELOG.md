@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.20.0 — 2026-09-17 — "the snapshot sink and source implement the protocols where core now holds them"
+
+Requires core 0.20.0, which moves `SnapshotSink` and `SnapshotSource` into a namespace
+of their own. No table or column moves, and a database written under 0.19.0 opens
+unchanged. **1 entry** — 1 Fix.
+
+- **The snapshot sink and source implement the protocols from `vaelii.impl.types.snapshot`.**
+  Core moves `SnapshotSink` and `SnapshotSource` out of `vaelii.impl.io.snapshot` into
+  `vaelii.impl.types.snapshot`, a namespace the development browser never reloads.
+  `PgSink` and `PgSource` implement them there, and the snapshot tests call the protocol
+  methods through that namespace. `save-index!`, `load-index!` and `memory-medium` stay in
+  `vaelii.impl.io.snapshot`. *Class:* **Fix**. *Migration:* none for a caller of
+  `pg-sink` or `pg-source`; requires a core that carries the move.
+
 ## 0.19.0 — 2026-09-14 — "a row an earlier core wrote reads back as the current record"
 
 The first cut of this adapter since 0.16.0; it sat 0.17.0 through 0.18.1 out. No table or

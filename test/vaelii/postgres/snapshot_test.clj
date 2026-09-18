@@ -9,6 +9,7 @@
             [vaelii.core :as v]
             [vaelii.impl.io.snapshot :as snap]
             [vaelii.impl.protocols :as p]
+            [vaelii.impl.types.snapshot :as snapshot-types]
             [vaelii.postgres.snapshot :as pg]
             [vaelii.postgres.test-util :as tu]))
 
@@ -28,13 +29,13 @@
                   (fn [image]
                     (let [frames [[:a 1] [:b #{2 3}] [:c [4 5 6]] ['(sym) {:m 1}]]]
                       (with-open [sink (pg/pg-sink ds image {:chunk-size 2})]  ; forces >1 chunk
-                        (is (= 4 (snap/write-section! sink "s" frames)) "frame count returned")
-                        (snap/commit! sink {:format 1 :index-layout 1 :records "r"
-                                            :sections {"s" {:count 4}}}))
+                        (is (= 4 (snapshot-types/write-section! sink "s" frames)) "frame count returned")
+                        (snapshot-types/commit! sink {:format 1 :index-layout 1 :records "r"
+                                                      :sections {"s" {:count 4}}}))
                       (let [src (pg/pg-source ds image)]
-                        (is (= frames (vec (snap/read-section src "s")))
+                        (is (= frames (vec (snapshot-types/read-section src "s")))
                             "the frames read back identical, across chunk boundaries")
-                        (is (= "r" (:records (snap/read-manifest src)))
+                        (is (= "r" (:records (snapshot-types/read-manifest src)))
                             "and the committed manifest is readable"))))))))
 
 (deftest a-section-cross-loads-with-the-memory-medium
@@ -46,13 +47,13 @@
                   (fn [image]
                     (let [frames (mapv (fn [i] [(keyword (str "k" i)) #{i (+ 1000 i)}]) (range 25))
                           mem    (snap/memory-medium)]
-                      (snap/write-section! mem "x" frames)
+                      (snapshot-types/write-section! mem "x" frames)
                       (with-open [sink (pg/pg-sink ds image {:chunk-size 10})]
-                        (snap/write-section! sink "x" frames)
-                        (snap/commit! sink {:format 1 :index-layout 1 :records "r"
-                                            :sections {"x" {:count (count frames)}}}))
-                      (is (= (vec (snap/read-section mem "x"))
-                             (vec (snap/read-section (pg/pg-source ds image) "x")))
+                        (snapshot-types/write-section! sink "x" frames)
+                        (snapshot-types/commit! sink {:format 1 :index-layout 1 :records "r"
+                                                      :sections {"x" {:count (count frames)}}}))
+                      (is (= (vec (snapshot-types/read-section mem "x"))
+                             (vec (snapshot-types/read-section (pg/pg-source ds image) "x")))
                           "memory and Postgres return the same section")))))))
 
 ;; ---- the index image, through save-index! / load-index! -----------------
@@ -104,9 +105,9 @@
      (fresh-image ds "rt-abort"
                   (fn [image]
                     (let [sink (pg/pg-sink ds image)]
-                      (snap/write-section! sink "s" [[:a 1] [:b 2]])
+                      (snapshot-types/write-section! sink "s" [[:a 1] [:b 2]])
                       (.close ^java.io.Closeable sink))    ; no commit! — rollback
-                    (is (nil? (snap/read-manifest (pg/pg-source ds image)))
+                    (is (nil? (snapshot-types/read-manifest (pg/pg-source ds image)))
                         "no committed manifest, so the image reads as absent"))))))
 
 ;; ---- a database no sink has written --------------------------------------
@@ -121,7 +122,7 @@
    (fn [ds]
      (jdbc/execute-one! ds ["DROP TABLE IF EXISTS vaelii_snapshot_section"])
      (jdbc/execute-one! ds ["DROP TABLE IF EXISTS vaelii_snapshot_manifest"])
-     (is (nil? (snap/read-manifest (pg/pg-source ds "never-written")))
+     (is (nil? (snapshot-types/read-manifest (pg/pg-source ds "never-written")))
          "no tables reads as no manifest")
      (let [kb (v/open-kb {:backend :memory})]
        (is (= {:index :rebuild :reason :absent}

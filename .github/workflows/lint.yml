@@ -61,11 +61,11 @@ jobs:
           # anonymous, and the rest of the job runs third-party lein plugins.
           persist-credentials: false
 
-      - name: Set up JDK 21
+      - name: Set up JDK 25
         uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961  # v5.7.0
         with:
           distribution: temurin
-          java-version: '21'
+          java-version: '25'
 
       # kondo runs as a standalone binary, not through lein — `lein lint-kondo`
       # shells out to it — so this installs both, each pinned: the action is a
@@ -81,9 +81,9 @@ jobs:
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
         with:
           path: ~/.m2
-          key: m2-${{ runner.os }}-jdk21-${{ hashFiles('vaelii/project.clj', 'vaelii-postgres/project.clj') }}
+          key: m2-${{ runner.os }}-jdk25-${{ hashFiles('vaelii/project.clj', 'vaelii-postgres/project.clj') }}
           restore-keys: |
-            m2-${{ runner.os }}-jdk21-
+            m2-${{ runner.os }}-jdk25-
 
       # The reflection ratchet's `lein check` loads core SOURCE through the
       # checkout, but Leiningen still resolves core's coordinate for its

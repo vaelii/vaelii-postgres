@@ -135,9 +135,12 @@
                  "and is reflected on the fetched record"))))))))
 
 ;; A frame is the whole record nippy froze, so a row carries every field the record had
-;; when it was written: `:polarity`, a rule's `:sentence`, and a justification's `:out`
-;; with the rule handle among its `:antecedents`.  A fetch passes the thawed record
-;; through `codec/decode-sentex` / `codec/decode-justification`, which drop them.
+;; when it was written: `:polarity`, a rule's `:sentence`, a justification's `:out` with
+;; the rule handle among its `:antecedents`, and, through core 0.21.0, a rule's
+;; `:direction` / `:assumption` / `:constraint` where `:engines` / `:effect` now stand.  A
+;; fetch passes the thawed record through `codec/decode-sentex` /
+;; `codec/decode-justification`, which drop the first three and read the wrapper fields
+;; into `:engines` / `:effect`.
 (deftest a-row-carrying-removed-fields-reads-as-the-current-record
   (tu/served
    (fn [ds]
@@ -153,7 +156,12 @@
                      (cond-> (assoc s :polarity (if (= 'not (first (v/sentence-of s)))
                                                   :negative
                                                   :positive))
-                       (:antecedent s) (assoc :sentence (v/sentence-of s))))
+                       (:antecedent s) (assoc :sentence (v/sentence-of s)
+                                              :direction (get {#{:forward :backward} :both
+                                                               #{:forward}           :forward}
+                                                              (:engines s) :backward)
+                                              :assumption nil :constraint nil
+                                              :engines nil :effect nil)))
              wide-j (fn [j] (assoc j :antecedents (conj (vec (:antecedents j)) (:informant j))
                                    :out #{}))]
          (is (seq js) "the rule fired, so a justification names it as its informant")
@@ -164,7 +172,7 @@
                (doseq [j js] (p/put-justification store (wide-j j))))
              (with-open [store (rec/pg-record-store spec)]
                (is (= sxs (mapv #(p/get-sentex store (:id %)) sxs))
-                   "each sentex reads back without `:polarity` or a rule's `:sentence`")
+                   "each sentex reads back as the current record")
                (is (= js (mapv #(p/get-justification store (:id %)) js))
                    "each justification reads back without `:out` or the rule among its antecedents")))))))))
 

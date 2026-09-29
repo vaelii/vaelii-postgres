@@ -1,5 +1,26 @@
 # Changelog
 
+## 0.22.0 — 2026-09-29 — "a rule row written under core 0.21.0 reads back with the engines and effect core 0.22.0 names"
+
+Requires core 0.22.0, whose rule record holds `:engines` and `:effect` in place of
+`:direction`, `:assumption` and `:constraint`. No table or column moves, and a database
+written under 0.20.0 or 0.21.0 opens unchanged. **2 entries** — 1 Fix, 1 Additive.
+
+- **A rule row written under core 0.21.0 or earlier reads back as the current record.** A
+  frame is the whole record nippy froze, so such a row carries the three wrapper fields and
+  no `:engines` or `:effect`. A fetch already passes the thawed record through the
+  engine's `codec/decode-sentex`, which core 0.22.0 extends to read the three fields into
+  the two; the read-back test now writes a rule in that shape and reads it back through
+  `pg-record-store`. *Class:* **Fix** — a test; no table, column or call moves.
+  *Migration:* none; requires core 0.22.0.
+
+- **The default JDK is Temurin 25, as core's is.** CI runs on Temurin 25, and
+  `project.clj` sets `:jvm-opts` from the JDK it runs on: `-XX:-OmitStackTraceInFastThrow`,
+  `--enable-native-access=ALL-UNNAMED`, and from JDK 23
+  `--sun-misc-unsafe-memory-access=allow`, which silence the JDK 24+ warnings for native
+  loads and nippy's `sun.misc.Unsafe` calls. The adapter still runs on JDK 21.
+  *Class:* **Additive** (developer tooling; no public function moves).
+
 ## 0.20.0 — 2026-09-17 — "the snapshot sink and source implement the protocols where core now holds them"
 
 Requires core 0.20.0, which moves `SnapshotSink` and `SnapshotSource` into a namespace

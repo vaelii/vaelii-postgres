@@ -20,6 +20,7 @@
   (:require [clojure.test :refer [deftest is testing]]
             [vaelii.core :as v]
             [vaelii.impl.protocols :as p]
+            [vaelii.impl.recovery :as recovery]
             [vaelii.postgres.record-store :as rec]
             [vaelii.postgres.test-util :as tu])
   (:import [java.io File]))
@@ -231,6 +232,80 @@
                         (long (p/count-at (:index kb) [])))
                      "and the rebuilt index describes all of them")
                  (finally (v/close! kb)))))))))))
+
+;; ---- :pg-snapshot -------------------------------------------------------
+
+(defn- counting-recovers
+  "Call `(f)` counting the full recovers it runs, and return `[result n]`."
+  [f]
+  (let [n    (atom 0)
+        real @#'recovery/recover-from-records]
+    [(with-redefs-fn {#'recovery/recover-from-records
+                      (fn [& args] (swap! n inc) (apply real args))}
+       f)
+     @n]))
+
+(deftest a-pg-snapshot-kb-installs-both-images-from-its-directory
+  ;; `:pg-snapshot` is `:disk-snapshot` with the records on the server: the close writes
+  ;; the index image and the reasoning image under :dir, stamped with the adapter's stamp
+  ;; row, and the next open installs both instead of reindexing and recovering.
+  (tu/served
+   (fn [ds]
+     (tu/with-schema ds "vaelii_kb_snap"
+       (fn [spec]
+         (with-temp-dir
+           (fn [dir]
+             (let [kb (v/open-kb {:backend :pg-snapshot :pg spec :dir dir})]
+               (try (populate! kb) (finally (v/close! kb))))
+             (testing "both images are local, and the records are not"
+               (is (.exists (File. (str dir "/index/trie.csr"))))
+               (is (.exists (File. (str dir "/reasoning/manifest.edn"))))
+               (is (not (.exists (File. (str dir "/records")))))
+               (is (= :pg-snapshot (v/store-backend dir))))
+             (let [[kb2 n] (counting-recovers
+                            #(v/open-kb {:backend :pg-snapshot :pg spec :dir dir}))]
+               (try
+                 (is (zero? n) "the reopen installed the reasoning image instead of recovering")
+                 (reasons-and-retracts! kb2)
+                 (finally (v/close! kb2)))))))))))
+
+(deftest a-write-the-images-did-not-see-moves-the-stamp
+  ;; A KB over the same records that keeps no image — here `:pg-memory`, in practice a
+  ;; crash or another writer — writes behind the images.  The stamp row moved with the
+  ;; write, so the next `:pg-snapshot` open discards both images and rebuilds.
+  (tu/served
+   (fn [ds]
+     (tu/with-schema ds "vaelii_kb_snap_moved"
+       (fn [spec]
+         (with-temp-dir
+           (fn [dir]
+             (let [kb (v/open-kb {:backend :pg-snapshot :pg spec :dir dir})]
+               (try (populate! kb) (finally (v/close! kb))))
+             (let [other (v/open-kb {:backend :pg-memory :pg spec})]
+               (try (v/assert other '(likes Tom Milk) 'CxTest)
+                    (finally (v/close! other))))
+             (let [[kb2 n] (counting-recovers
+                            #(v/open-kb {:backend :pg-snapshot :pg spec :dir dir}))]
+               (try
+                 (is (= 1 n) "the images were declined and belief recovered from the records")
+                 (is (seq (v/sentexes-matching kb2 '(likes Tom Milk) 'CxTest))
+                     "and the write behind them is there")
+                 (finally (v/close! kb2)))))))))))
+
+(deftest a-pg-snapshot-directory-is-held-to-one-database
+  (tu/served
+   (fn [ds]
+     (tu/with-schema ds "vaelii_kb_snap_a"
+       (fn [spec-a]
+         (tu/with-schema ds "vaelii_kb_snap_b"
+           (fn [spec-b]
+             (with-temp-dir
+               (fn [dir]
+                 (let [kb (v/open-kb {:backend :pg-snapshot :pg spec-a :dir dir})]
+                   (try (populate! kb) (finally (v/close! kb))))
+                 (is (thrown-with-msg? clojure.lang.ExceptionInfo #"was built against"
+                                       (v/open-kb {:backend :pg-snapshot :pg spec-b :dir dir}))
+                     "another schema's records are refused the directory"))))))))))
 
 ;; ---- the database is the KB's, and the schema is what says so -----------
 

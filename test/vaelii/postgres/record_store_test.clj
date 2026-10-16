@@ -779,3 +779,34 @@
                 (plan "SELECT id FROM vaelii_rec_tallyplan.vaelii_record WHERE kind = 0 LIMIT 1")
                 "Limit")
                "and the sample stops at the first row rather than scanning to build a set")))))))
+
+;; ---- the image stamp ------------------------------------------------------
+
+(deftest the-stamp-moves-with-every-write-and-names-its-store
+  (tu/served
+   (fn [ds]
+     (tu/with-schema ds "vaelii_stamp_a"
+       (fn [spec]
+         (with-open [store (rec/pg-record-store spec)]
+           (let [stamps (atom [(p/index-stamp store)])
+                 moved! (fn [what]
+                          (let [now (p/index-stamp store)]
+                            (is (not= (peek @stamps) now) (str what " moves the stamp"))
+                            (swap! stamps conj now)))
+                 s      (sx '(likes Felix Tuna) :default)
+                 id     (p/put-sentex store s)]
+             (moved! "a put")
+             (p/mark-premise store id :default)
+             (moved! "a premise mark")
+             (p/delete-sentex! store id)
+             (moved! "a delete")
+             (p/clear-records! store)
+             (moved! "a clear")
+             (is (= (p/index-stamp store) (p/index-stamp store)) "a read does not")
+             (is (= (p/index-stamp store) (p/belief-stamp store)))
+             (is (= 1 (count (distinct (map :store @stamps)))) "one store throughout")
+             (tu/with-schema ds "vaelii_stamp_b"
+               (fn [spec-b]
+                 (with-open [other (rec/pg-record-store spec-b)]
+                   (is (not= (:store (p/index-stamp store)) (:store (p/index-stamp other)))
+                       "and another store's stamp names another store")))))))))))

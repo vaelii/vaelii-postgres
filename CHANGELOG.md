@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.27.0 — 2026-10-15 — "the store stamps an index image and a reasoning image, so core opens it as `:pg-snapshot`"
+
+Requires core 0.27.0, whose `p/ImageStamping` protocol a record store implements to sit
+under `:pg-snapshot`. Opening a schema written by an earlier adapter adds one table and
+one trigger; no existing table or column moves. **1 entry** — 1 Additive.
+
+- **The store stamps an index image and a reasoning image, so core opens it as
+  `:pg-snapshot`.** `ensure-schema!` adds `vaelii_record_stamp`, one row holding a uuid
+  minted with the store and a write count, and a statement-level trigger on
+  `vaelii_record` that moves the count on every insert, update, delete, truncate and
+  `COPY`, in the writing transaction. `PgRecordStore` answers `index-stamp` and
+  `belief-stamp` off that row, so `{:backend :pg-snapshot :pg … :dir …}` keeps both images
+  in `:dir` and the next open installs them instead of reindexing and recovering; a write
+  the images did not see moves the stamp, and that open rebuilds. *Class:* **Additive**.
+  *Migration:* none; the first open under this adapter creates the table and the trigger.
+
 ## 0.22.0 — 2026-09-29 — "a rule row written under core 0.21.0 reads back with the engines and effect core 0.22.0 names"
 
 Requires core 0.22.0, whose rule record holds `:engines` and `:effect` in place of

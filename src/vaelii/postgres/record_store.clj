@@ -38,6 +38,13 @@
   * `vaelii_record_provenance (id, prov)` and `vaelii_record_meta (k, v)`, the latter
     holding `high_water` — the largest handle ever allocated, so a delete of the max
     handle followed by a reopen still never reissues it.
+  * `vaelii_record_stamp (store_id, writes)`, one row: a uuid minted when the row is
+    first made, and a count a statement-level trigger on `vaelii_record` moves in the same
+    transaction as every insert, update, delete and truncate — `COPY` included.  It is the
+    stamp an index or reasoning image is validated against (`p/ImageStamping`), so a KB can
+    keep both images beside records on a server (`:pg-snapshot`): one row read at open
+    says whether the records moved since the images were written, and the uuid says whether
+    they are the same records at all.  A rolled-back statement does not move it.
 
   A put is **one statement**, not a transaction: a data-modifying CTE writes the record
   and moves `high_water` together, so a write costs one round trip rather than a
@@ -131,7 +138,8 @@
   (let [q    (if schema (str schema \.) "")
         rec  (str q "vaelii_record")
         prov (str q "vaelii_record_provenance")
-        meta (str q "vaelii_record_meta")]
+        meta (str q "vaelii_record_meta")
+        stamp (str q "vaelii_record_stamp")]
     {:ddl-schema     (when schema (str "CREATE SCHEMA IF NOT EXISTS " schema))
      :ddl-record     (str "CREATE TABLE IF NOT EXISTS " rec " (
                              id       bigint   PRIMARY KEY,
@@ -149,6 +157,24 @@
      :ddl-meta       (str "CREATE TABLE IF NOT EXISTS " meta " (
                              k text   PRIMARY KEY,
                              v bigint NOT NULL)")
+     ;; the image stamp: one row, never truncated by `:clear` (the trigger counts the
+     ;; truncate instead), so a cleared store's count moves past every image of its
+     ;; previous content
+     :ddl-stamp      (str "CREATE TABLE IF NOT EXISTS " stamp " (
+                             one      boolean PRIMARY KEY DEFAULT true CHECK (one),
+                             store_id uuid    NOT NULL DEFAULT gen_random_uuid(),
+                             writes   bigint  NOT NULL DEFAULT 0)")
+     :seed-stamp     (str "INSERT INTO " stamp " (one) VALUES (true) ON CONFLICT DO NOTHING")
+     :ddl-bump-fn    (str "CREATE OR REPLACE FUNCTION " q "vaelii_record_bump()
+                           RETURNS trigger LANGUAGE plpgsql AS $$
+                           BEGIN
+                             UPDATE " stamp " SET writes = writes + 1;
+                             RETURN NULL;
+                           END $$")
+     :ddl-bump       (str "CREATE OR REPLACE TRIGGER vaelii_record_bump"
+                          " AFTER INSERT OR UPDATE OR DELETE OR TRUNCATE ON " rec
+                          " FOR EACH STATEMENT EXECUTE FUNCTION " q "vaelii_record_bump()")
+     :stamp          (str "SELECT store_id::text AS store, writes FROM " stamp)
      ;; one statement, one round trip: the record and the high-water mark move
      ;; together.  A re-put replaces the record and its authoritative strength and
      ;; leaves `premise` alone, so a re-put keeps a mark.
@@ -335,6 +361,16 @@
                  nil)
     (finish)))
 
+;; ---- the image stamp ----------------------------------------------------
+
+(defn- read-stamp
+  "`{:store uuid-string :writes n}`, read fresh off the stamp row.  Never cached: the stamp
+  vouches for an image against what the server holds now, and a copy held here would
+  vouch for one written before a write this process never saw."
+  [ds sql]
+  (let [{:keys [store writes]} (jdbc/execute-one! ds [(:stamp sql)] lower-maps)]
+    {:store store :writes (long writes)}))
+
 ;; ---- the store ----------------------------------------------------------
 
 (defrecord PgRecordStore [ds sql counter ^Map sx-cache ^Map j-cache
@@ -518,6 +554,12 @@
               (.clear j-cache)
               (.clear prem-cache))
     nil)
+
+  p/ImageStamping
+  ;; one stamp for both images: the trigger counts every statement on the record table,
+  ;; justifications included, so it moves whenever either image's records do
+  (index-stamp [_] (read-stamp ds sql))
+  (belief-stamp [_] (read-stamp ds sql))
 
   p/Tallying
   ;; **The whole reason the capability exists.**  `open-kb` asks how many records this
@@ -873,14 +915,20 @@
     :prefetch :prefetch-min})
 
 (defn ensure-schema!
-  "Create the record, provenance and meta tables (and the premise index), and the
-  schema itself when one is named.  Idempotent; runs before any op."
+  "Create the record, provenance, meta and stamp tables (and the premise index and the
+  trigger that moves the stamp), and the schema itself when one is named.  Idempotent;
+  runs before any op, so a store made before the stamp existed gains it at its next open,
+  counting from zero — it has no image to be stamped against yet."
   [ds sql]
   (when-let [s (:ddl-schema sql)] (jdbc/execute-one! ds [s]))
   (jdbc/execute-one! ds [(:ddl-record sql)])
   (jdbc/execute-one! ds [(:ddl-premise-ix sql)])
   (jdbc/execute-one! ds [(:ddl-prov sql)])
-  (jdbc/execute-one! ds [(:ddl-meta sql)]))
+  (jdbc/execute-one! ds [(:ddl-meta sql)])
+  (jdbc/execute-one! ds [(:ddl-stamp sql)])
+  (jdbc/execute-one! ds [(:seed-stamp sql)])
+  (jdbc/execute-one! ds [(:ddl-bump-fn sql)])
+  (jdbc/execute-one! ds [(:ddl-bump sql)]))
 
 (defn- ->pool
   "A HikariCP pool over `spec`, built directly rather than reflectively so every call

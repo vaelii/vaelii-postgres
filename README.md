@@ -23,8 +23,11 @@ Two lanes, and they are independent — a KB can take either, both, or neither.
 
 The engine's `RecordStore` protocol over three tables, so a KB's durable ground truth
 lives in a database an operator already runs. Core selects it as `:pg-memory` (the
-derived index in RAM, rebuilt on every open) or `:pg-disk-log` (the durable index, which
-is **local** to the host running the writer and does not travel with the KB).
+derived index in RAM, rebuilt on every open), `:pg-disk-log` (the durable index, which
+is **local** to the host running the writer and does not travel with the KB), or
+`:pg-snapshot` (the index image and the reasoning image in a local directory, installed
+on open instead of reindexing and recovering while the records' stamp row says nothing
+was written behind them).
 
 What a server buys, stated narrowly:
 
@@ -85,6 +88,10 @@ A section written through this sink reads back frame-identical through any sourc
 
 ;; …or the durable index, in a directory on THIS host
 (def kb (v/open-kb {:backend :pg-disk-log :dir "/var/lib/vaelii/kb"
+                    :pg {:jdbcUrl "jdbc:postgresql://db.internal/vaelii"}}))
+
+;; …or both images, in a directory on THIS host: no reindex and no recover on open
+(def kb (v/open-kb {:backend :pg-snapshot :dir "/var/lib/vaelii/kb"
                     :pg {:jdbcUrl "jdbc:postgresql://db.internal/vaelii"}}))
 
 (v/assert kb '(likes Muffet Tom) 'CxTest)

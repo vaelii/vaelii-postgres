@@ -1,14 +1,16 @@
-# Per-file prose budget for scripts/check-prose.py -- the count of P1/P2/P3 hits each
+# Per-file prose budget for scripts/check-prose.py -- the count of P1-P6 hits each
 # file is allowed to carry while the tree is rewritten into literal technical language
-# (the engine's CONTRIBUTING.md §3.9).
+# (the engine's CONTRIBUTING.md §3.10).
 #
-# Format: <count>\t<path>\t<reason>.  A file absent from this list is pinned at ZERO,
+# Format: <count>\t<path>\t<reason>.  A file absent from this list is held at ZERO,
 # so a new file and a rewritten one are clean by default.
 #
 # The ratchet: `--update` LOWERS a count and never raises one.  Raising a count is a
 # hand edit that carries its reason on the line, so a regression shows up in the diff
 # rather than in a refresh.  A file whose real count is below its budget fails until it
-# is re-pinned, which is what keeps the number on this page moving down.
+# is lowered with `--update`, which is what keeps the number on this page moving down.
 #
-# The tree is at ZERO, so this file has no entries. It stays because the ratchet is how
-# a batch of new prose gets landed without blocking on rewriting all of it at once.
+# The entries are P5 names the code must still read or a changelog entry must quote
+# (the engine's CONTRIBUTING.md §3.10); every other file is at ZERO.
+2	src/vaelii/postgres/record_store.clj	P5: `vaelii_record_stamp`, the SQL table an existing schema holds
+2	src/vaelii/postgres/snapshot.clj	P5: `records_stamp`, the manifest column an existing schema holds

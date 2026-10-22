@@ -1,5 +1,35 @@
 # Changelog
 
+## 0.28.0 — 2026-10-21 — "the store fingerprints its images through `ImageFingerprinting`, and `premise-strength` answers every walked premise from per-strength handle sets"
+
+Requires core 0.28.0, whose `p/ImageFingerprinting` protocol and `vaelii.impl.handle-set`
+namespace the store reads. An existing schema opens unchanged. **3 entries** — 2 Fix,
+1 Internal.
+
+### Internal
+
+- **The store implements core's `ImageFingerprinting` and builds its handle sets
+  through `vaelii.impl.handle-set`, so it needs a core that carries those names.** An
+  existing schema opens unchanged. *Migration:* none. The store no longer reads core's
+  `ImageStamping` (`index-stamp`, `belief-stamp`) or `vaelii.impl.roster`, and the
+  `vaelii_record_stamp` table and the `records_stamp` column keep their names.
+
+### Fix: performance
+
+- **`premise-strength` answers every premise the `premise-ids` walk read without a query,
+  at any premise count.** The walk records each strength in a compressed handle set per
+  strength, where it held a boxed map entry per premise up to 4,000,000 and every premise
+  past that cost a round trip, one per premise a `recover` read.
+  `:premise-cache-capacity` is accepted and has no effect. *Migration:* none; drop
+  `:premise-cache-capacity` from a spec. See the `vaelii.postgres.record-store` ns
+  docstring.
+
+- **A bulk premise mark walks the table in id order.** `mark-premise-batch` took its
+  handles in hash-map order, so each 1,000-row `UPDATE` touched a heap page per row, and
+  on a table larger than `shared_buffers` each row was a read from disk. The chunks are now cut from the handles sorted, so a
+  chunk's rows share pages and consecutive chunks read forward.
+  *Migration:* none.
+
 ## 0.27.0 — 2026-10-15 — "the store stamps an index image and a reasoning image, so core opens it as `:pg-snapshot`"
 
 Requires core 0.27.0, whose `p/ImageStamping` protocol a record store implements to sit

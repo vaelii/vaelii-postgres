@@ -4,7 +4,7 @@
   (Integer/parseInt
    (second (re-find #"^(?:1\.)?(\d+)" (System/getProperty "java.specification.version")))))
 
-(defproject com.vaelii/postgres "0.27.0"
+(defproject com.vaelii/postgres "0.28.0"
   :description "Postgres targets for vaelii's storage protocols, in two independent
                 lanes. The record store (vaelii.postgres.record-store) puts a KB's
                 durable ground truth in a database — core selects it as :pg-memory
@@ -48,7 +48,7 @@
    ;; CONSUMER of this adapter resolves, and it is a floor rather than a convenience.
    ;; The record store implements core's Prefetching protocol, which lands in 0.11.1 — so
    ;; that is the floor, and it stays a SNAPSHOT only until 0.11.1 is cut.
-   [com.vaelii/vaelii "0.27.0"]
+   [com.vaelii/vaelii "0.28.0"]
    ;; the sink's own deps — declared here, not leaned on through core, so a change
    ;; in core's deps cannot break this adapter's load
    [com.github.seancorfield/next.jdbc "1.3.1118"]
@@ -74,7 +74,7 @@
   :shell {:env {"CLASSPATH" nil}}
 
   :aliases
-  ;; Static-analysis gates, mirroring vaelii core's. `lein lint` runs kondo +
+  ;; Static-analysis checks, mirroring vaelii core's. `lein lint` runs kondo +
   ;; cljfmt + shellcheck + reflect through scripts/lint.sh, which prints one ✓/✗
   ;; line per check and runs ALL of them (not fail-fast), so a red run surfaces
   ;; every problem in one pass (VERBOSE=1 dumps detail). The granular lint-*

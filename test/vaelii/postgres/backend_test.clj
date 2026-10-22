@@ -13,7 +13,7 @@
   `:pg-disk-log` puts that index in a durable directory on the machine running the writer, so
   a restart on **that host** skips the rebuild — and a second host, connecting to the same
   database, finds no index and rebuilds from scratch.  The index does not travel with the
-  KB, which is what the last test here pins.
+  KB, which is what the last test here asserts.
 
   Requiring `vaelii.postgres.record-store` is what puts the adapter on the classpath so
   the lazy resolve in core finds it."
@@ -101,7 +101,7 @@
                js    (mapv #(p/get-justification recs %) (p/justification-ids recs))
                prems (p/premise-ids recs)]
            ;; `:premises? false`, then the marks: a derived sentex carries a strength too,
-           ;; so the strength column alone would roster conclusions as assumptions.
+           ;; so the strength column alone would list conclusions as assumptions.
            (with-open [store (rec/pg-record-store spec)]
              (is (= (count sxs) (rec/copy-sentexes! store sxs {:premises? false})))
              (is (= (count js) (rec/copy-justifications! store js)))
@@ -161,6 +161,11 @@
                    (is (= (set (p/premise-ids (:records ram)))
                           (set (p/premise-ids (:records pg))))
                        "and the premise marks rode the copy, not a round trip apiece")
+                   (is (= (into {} (for [h (p/premise-ids (:records ram))]
+                                     [h (p/premise-strength (:records ram) h)]))
+                          (into {} (for [h (p/premise-ids (:records pg))]
+                                     [h (p/premise-strength (:records pg) h)])))
+                       "each at the same strength")
                    (is (= (set (v/ask ram '(q ?x) 'CxTest))
                           (set (v/ask pg '(q ?x) 'CxTest)))
                        "so the rule re-derives the same conclusions after the recover")
@@ -247,8 +252,8 @@
 
 (deftest a-pg-snapshot-kb-installs-both-images-from-its-directory
   ;; `:pg-snapshot` is `:disk-snapshot` with the records on the server: the close writes
-  ;; the index image and the reasoning image under :dir, stamped with the adapter's stamp
-  ;; row, and the next open installs both instead of reindexing and recovering.
+  ;; the index image and the reasoning image under :dir, each recording the adapter's
+  ;; fingerprint row, and the next open installs both instead of reindexing and recovering.
   (tu/served
    (fn [ds]
      (tu/with-schema ds "vaelii_kb_snap"
@@ -269,9 +274,27 @@
                  (reasons-and-retracts! kb2)
                  (finally (v/close! kb2)))))))))))
 
-(deftest a-write-the-images-did-not-see-moves-the-stamp
+(deftest a-pg-snapshot-directory-reopens-with-no-pg
+  ;; the directory records the server its index was built against, so a reopen names only
+  ;; the directory, as a :disk one does: core reads the server off that record
+  (tu/served
+   (fn [ds]
+     (tu/with-schema ds "vaelii_kb_snap_dir"
+       (fn [spec]
+         (with-temp-dir
+           (fn [dir]
+             (let [kb (v/open-kb {:backend :pg-snapshot :pg spec :dir dir})]
+               (try (populate! kb) (finally (v/close! kb))))
+             (let [[kb2 n] (counting-recovers
+                            #(v/open-kb {:backend (v/store-backend dir) :dir dir}))]
+               (try
+                 (is (zero? n) "both images installed")
+                 (reasons-and-retracts! kb2)
+                 (finally (v/close! kb2)))))))))))
+
+(deftest a-write-the-images-did-not-see-moves-the-records-fingerprint
   ;; A KB over the same records that keeps no image — here `:pg-memory`, in practice a
-  ;; crash or another writer — writes behind the images.  The stamp row moved with the
+  ;; crash or another writer — writes behind the images.  The fingerprint row moved with the
   ;; write, so the next `:pg-snapshot` open discards both images and rebuilds.
   (tu/served
    (fn [ds]

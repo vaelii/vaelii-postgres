@@ -2,11 +2,11 @@
 ;; Copyright © 2026 Vaelii LLC and the Vaelii contributors.
 (ns vaelii.postgres.record-store-test
   "The Postgres record store, exercised against a live server (`vaelii.postgres.test-util`
-  gates and skips when there is none).
+  checks for one and skips when there is none).
 
   The core assurance is an **oracle test**: the same op sequence run against a fresh
   in-memory `RecordStore` — the reference backend — and against this one must yield
-  identical observations at every step, so the store is pinned to the reference's
+  identical observations at every step, so the tests hold the store to the reference's
   behaviour rather than to a re-derivation of the contract.  The rest is what only a
   networked store has to answer for: that a reopen never reissues a handle, that the
   enumerations stream rather than buffer, and that `COPY` lands the same records the
@@ -16,9 +16,9 @@
             [next.jdbc :as jdbc]
             [vaelii.core :as v]
             [vaelii.impl.capabilities :as cap]
+            [vaelii.impl.handle-set :as handle-set]
             [vaelii.impl.memory :as mem]
             [vaelii.impl.protocols :as p]
-            [vaelii.impl.roster :as roster]
             [vaelii.postgres.record-store :as rec]
             [vaelii.postgres.test-util :as tu])
   (:import [java.sql ResultSet Statement]))
@@ -178,7 +178,7 @@
 
 (deftest a-batch-annotate-lands-what-the-one-row-entry-point-lands
   ;; `mark-premise-batch` / `put-provenance-batch` are one statement where the protocol's
-  ;; own ops are a round trip apiece, so what has to be pinned is that nothing about the
+  ;; own ops are a round trip apiece, so what has to be asserted is that nothing about the
   ;; result moves — the phantom-premise guard above all, which over a batch cannot read an
   ;; update count and reads the statement's `RETURNING` instead.
   (tu/served
@@ -326,7 +326,7 @@
            (testing "and the enumerations themselves are complete"
              (is (= 500 (count (p/sentex-ids store))))
              (is (= 500 (count (p/premise-ids store)))
-                 "the premise walk streams too, and fills the strength cache as it goes")
+                 "the premise walk streams too, and fills the strength sets as it goes")
              (is (= :default (p/premise-strength store 250))
                  "so the strength read after it issues no query"))))))))
 
@@ -523,7 +523,8 @@
            (p/put-sentex store (assoc (sx '(p A) :default) :id 1))
            (p/mark-premise store 1 :monotonic)
            (p/put-sentex store {:id 1 :sentence '(p A) :context 'CxTest})
-           (is (= #{1} (p/premise-ids store)) "the walk completes and still rosters it")
+           (is (= #{1} (p/premise-ids store))
+               "the walk completes and still lists it as a premise")
            (is (= :default (p/premise-strength store 1))
                "and a marked row with no strength reads as :default, as the reference stores do")))))))
 
@@ -558,21 +559,57 @@
            (is (= :default (p/premise-strength store 777))
                "and none in the cache either — the reference stores answer :default")))))))
 
-(deftest a-strength-upgrade-lands-even-with-a-full-cache
-  ;; the ordinary path is a strength *upgrade* on a handle already marked, so a capacity
-  ;; guard that refuses the write for a key already held drops exactly the writes that
-  ;; matter.
+(deftest every-premise-the-walk-read-answers-its-strength-with-no-query
+  ;; `recover` asks `premise-strength` for every handle `premise-ids` returns.  A second
+  ;; store opens over the rows, so only its walk can have recorded the strengths, and
+  ;; `:premise-cache-capacity 2` is below the premise count.  Dropping the table makes
+  ;; any query throw, so each answer after the drop came from the strength sets.
   (tu/served
    (fn [ds]
-     (tu/with-schema ds "vaelii_rec_capacity"
+     (tu/with-schema ds "vaelii_rec_strengths"
        (fn [spec]
+         (with-open [store (rec/pg-record-store spec)]
+           (doseq [i (range 1 9)]
+             (p/put-sentex store (assoc (sx (list 'p i) :default) :id i)))
+           (doseq [i (range 1 7)]
+             (p/mark-premise store i (if (even? i) :monotonic :default)))
+           ;; a marked row whose strength column is NULL
+           (p/put-sentex store {:id 6 :sentence '(p 6) :context 'CxTest}))
          (with-open [store (rec/pg-record-store spec {:premise-cache-capacity 2})]
-           (doseq [i [1 2 3]]
-             (p/put-sentex store (assoc (sx (list 'p i) :default) :id i))
-             (p/mark-premise store i :default))
-           (p/mark-premise store 1 :monotonic)
-           (is (= :monotonic (p/premise-strength store 1))
-               "the upgrade is visible though the cache is over capacity")))))))
+           (is (= (set (range 1 7)) (p/premise-ids store)))
+           (testing "a mark, a strength change and an unmark after the walk"
+             (p/mark-premise store 7 :monotonic)
+             (p/mark-premise store 1 :monotonic)
+             (p/mark-premise store 2 :default)
+             (p/unmark-premise! store 3)
+             (is (= :default (p/premise-strength store 3))
+                 "an unmarked handle reads its NULL column"))
+           (drop-table! ds "vaelii_rec_strengths")
+           (is (= {1 :monotonic 2 :default 4 :monotonic 5 :default 6 :default 7 :monotonic}
+                  (into {} (map (juxt identity #(p/premise-strength store %)))
+                        [1 2 4 5 6 7])))))))))
+
+(deftest a-walk-beside-an-unmark-never-reinstates-the-strength
+  ;; The walk installs the strengths its cursor read.  An unmark landing between the
+  ;; cursor's read and the install would be undone by it, and the handle would answer
+  ;; `:monotonic` though its column is NULL.  Stressed rather than staged, as the fetch
+  ;; race below is.
+  (tu/served
+   (fn [ds]
+     (tu/with-schema ds "vaelii_rec_walkrace"
+       (fn [spec]
+         (with-open [store (rec/pg-record-store spec)]
+           (p/put-sentex store (assoc (sx '(p 1) :default) :id 1))
+           (let [trials 100
+                 stale  (reduce (fn [n _]
+                                  (p/mark-premise store 1 :monotonic)
+                                  (let [walk (future (p/premise-ids store))]
+                                    (p/unmark-premise! store 1)
+                                    @walk
+                                    (if (= :default (p/premise-strength store 1)) n (inc n))))
+                                0 (range trials))]
+             (is (zero? stale)
+                 (str stale " of " trials " walks reinstated an unmarked handle's strength")))))))))
 
 (deftest a-handle-this-store-could-not-have-issued-is-answered-not-thrown
   ;; `id-ok?`'s contract, which the fetches kept and four other ops did not: an informant
@@ -617,7 +654,7 @@
   ;; The supported shape is one writer and a reader beside it.  A read is a miss, a server
   ;; round trip and an install; a delete landing between the round trip and the install was
   ;; undone by it, and the deleted record then answered that reader for the life of the
-  ;; store.  Stressed rather than staged: the window is real but narrow.
+  ;; store.  Stressed rather than staged: the race window is real but narrow.
   (tu/served
    (fn [ds]
      (tu/with-schema ds "vaelii_rec_race"
@@ -690,19 +727,19 @@
              (is (some? (jdbc/execute-one! c ["SELECT 1"]))
                  "the datasource still answers after the store closed"))))))))
 
-;; ---- the roster, and the questions that do not need it -------------------
+;; ---- the handle set, and the questions that do not need it ---------------
 
-(deftest the-enumerations-answer-a-compressed-roster
+(deftest the-enumerations-answer-a-compressed-handle-set
   ;; The protocol says a `java.util.Set`, not a `PersistentHashSet` — and this is the store
   ;; the difference is for.  A hash set of boxed handles retains 48–75 bytes apiece, so
-  ;; the roster of the corpus a server backend exists to hold is gigabytes of the
+  ;; a hash set of the corpus a server backend exists to hold is gigabytes of the
   ;; caller's heap before a record is fetched; the compressed one is a fraction of a byte
   ;; a handle over the near-contiguous run `next-id` mints.  What is asserted here is not
-  ;; the size — core's `roster_test` owns that — but that this store returns one, and that
-  ;; it equals the set the reference backend answers.
+  ;; the size — core's `handle_set_test` owns that — but that this store returns one, and
+  ;; that it equals the set the reference backend answers.
   (tu/served
    (fn [ds]
-     (with-store ds "vaelii_rec_roster"
+     (with-store ds "vaelii_rec_handle_set"
        (fn [store]
          (let [ids (into [] (map #(p/put-sentex store (sx (list 'p %) :default))) (range 200))
                j   (p/put-justification store {:informant :fwd :antecedents (vec (take 2 ids))})]
@@ -710,7 +747,8 @@
            (doseq [[label got] [["sentex-ids" (p/sentex-ids store)]
                                 ["justification-ids" (p/justification-ids store)]
                                 ["premise-ids" (p/premise-ids store)]]]
-             (is (roster/roster? got) (str label " answers a compressed roster")))
+             (is (handle-set/handle-set? got)
+                 (str label " answers a compressed handle set")))
            (testing "and it equals the set it replaces"
              (is (= (set ids) (p/sentex-ids store)))
              (is (= (p/sentex-ids store) (set ids)) "equal whichever side it is on")
@@ -720,13 +758,13 @@
              (is (not (contains? (p/sentex-ids store) 999999)))
              (is (= 200 (count (p/sentex-ids store))))
              (is (= (sort ids) (sort (p/sentex-ids store))) "and sorts to one sequence"))
-           (testing "the premise walk still fills the strength cache"
+           (testing "the premise walk still fills the strength sets"
              (p/premise-ids store)
              (is (= :monotonic (p/premise-strength store (first ids)))))))))))
 
-(deftest a-tally-is-one-row-and-agrees-with-the-roster
+(deftest a-tally-is-one-row-and-agrees-with-the-handle-set
   ;; `open-kb` asks how many records this store holds and whether it holds any, before
-  ;; the KB has answered anything.  Spelled through the roster those are the whole table
+  ;; the KB has answered anything.  Spelled through the set those are the whole table
   ;; on the wire; through `Tallying` they are one row each.  The property that matters is
   ;; that they answer the *same* thing, since core calls the helpers unconditionally.
   (tu/served
@@ -780,19 +818,20 @@
                 "Limit")
                "and the sample stops at the first row rather than scanning to build a set")))))))
 
-;; ---- the image stamp ------------------------------------------------------
+;; ---- the records fingerprint ----------------------------------------------
 
-(deftest the-stamp-moves-with-every-write-and-names-its-store
+(deftest the-fingerprint-moves-with-every-write-and-names-its-store
   (tu/served
    (fn [ds]
-     (tu/with-schema ds "vaelii_stamp_a"
+     (tu/with-schema ds "vaelii_fingerprint_a"
        (fn [spec]
          (with-open [store (rec/pg-record-store spec)]
-           (let [stamps (atom [(p/index-stamp store)])
+           (let [prints (atom [(p/index-fingerprint store)])
                  moved! (fn [what]
-                          (let [now (p/index-stamp store)]
-                            (is (not= (peek @stamps) now) (str what " moves the stamp"))
-                            (swap! stamps conj now)))
+                          (let [now (p/index-fingerprint store)]
+                            (is (not= (peek @prints) now)
+                                (str what " moves the fingerprint"))
+                            (swap! prints conj now)))
                  s      (sx '(likes Felix Tuna) :default)
                  id     (p/put-sentex store s)]
              (moved! "a put")
@@ -802,11 +841,13 @@
              (moved! "a delete")
              (p/clear-records! store)
              (moved! "a clear")
-             (is (= (p/index-stamp store) (p/index-stamp store)) "a read does not")
-             (is (= (p/index-stamp store) (p/belief-stamp store)))
-             (is (= 1 (count (distinct (map :store @stamps)))) "one store throughout")
-             (tu/with-schema ds "vaelii_stamp_b"
+             (is (= (p/index-fingerprint store) (p/index-fingerprint store))
+                 "a read does not")
+             (is (= (p/index-fingerprint store) (p/belief-fingerprint store)))
+             (is (= 1 (count (distinct (map :store @prints)))) "one store throughout")
+             (tu/with-schema ds "vaelii_fingerprint_b"
                (fn [spec-b]
                  (with-open [other (rec/pg-record-store spec-b)]
-                   (is (not= (:store (p/index-stamp store)) (:store (p/index-stamp other)))
-                       "and another store's stamp names another store")))))))))))
+                   (is (not= (:store (p/index-fingerprint store))
+                             (:store (p/index-fingerprint other)))
+                       "and another store's fingerprint names another store")))))))))))

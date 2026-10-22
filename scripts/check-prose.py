@@ -4,23 +4,24 @@
 Comments, docstrings, doc pages and test names state what the code does. A metaphor
 standing in for a mechanism, an evaluative adjective with no measurement behind it, and
 a pseudo-cleft that delays the subject are all decodable only by inference, so this
-check fails on them. The rule and the substitution table are the engine repo's CONTRIBUTING.md §3.9, which
-this repo is held to as well.
+check fails on them. The rule and the substitution table are the engine repo's
+CONTRIBUTING.md §3.10, which this repo is held to as well.
 
-Four codes:
+Six codes:
 
   P1  A metaphor where the mechanism has a name. `door` is two different things --
       an API entry point (`assert`, `match`, the served handlers) and a validation
       check (a class-name allowlist, an arity refusal) -- which is the reason it is
-      banned rather than renamed in place. `seam` is an interface or an extension
-      point; `cone` is an ancestor set or an upward closure.
+      banned rather than renamed in place. `seam` is a protocol, an extension point,
+      a boundary or a call site; `cone` is an ancestor set or an upward closure.
 
   P2  Evaluative language carrying no measurement: load-bearing, earns its keep,
-      worth writing down, the tempting alternative, the only honest option. Where the
-      claim is quantitative, cite the test or bench that measures it (the engine's CONTRIBUTING §8).
+      earns its place, worth writing down, the tempting alternative, honest and
+      honestly, payoff. Where the claim is quantitative, cite the test or bench that
+      measures it (the engine's CONTRIBUTING §8).
 
-  P3  Pseudo-cleft -- `What holds the wrap is a version pin` -- which withholds the
-      subject until after the verb.
+  P3  Pseudo-cleft -- `What keeps the wrap on its release is the version check` --
+      which withholds the subject until after the verb.
 
   P4  A copula with `are` straight after it -- `is are`, `be are`, `are are`. Not a
       style rule: no sentence needs the pair, so it marks a phrase substituted in
@@ -28,14 +29,33 @@ Four codes:
       substitution made across the tree at once is how their hits get fixed, so the
       pass that fixes them is the one that leaves these.
 
+  P5  A word that names no one mechanism and covers several: `roster` (a set, a list,
+      a table, an allowlist), `gate` (a check, a refusal, a guard clause), `pin` (a test
+      asserts, a fixture forces, a value is held), `stamp` (a fingerprint, a recorded
+      value, a version), `window` (a touched set, a range, a buffer). Identifiers count:
+      `exception-roster-gate` is a hit. The time sense of `window` (a time, idle, grace or
+      retry window) and the gate tool's own tokens (`lein gate`, `gate.sh`, `GATE_*`,
+      `logs/gate`) are not hits.
+
+  P6  `view` in any sense but what a context sees up its `genlCx` ancestor set. A hit
+      passes inside a phrase that names the context ("CxB's view", "the view context",
+      "comes into view", `view-context`); a bare "the view" fails. A phrase wrapped onto
+      the next line is read with the last three words of the line before it.
+
+P5 and P6 skip CHANGELOG.md's released sections (from the first `## 0.` or `## [0.`
+heading on), which are frozen. P6 skips the reference model under `test/vaelii/ref/`,
+whose `view` and `view-of` are its own names for a context's visible set, and the
+glossary and reserved-words pages that define the word.
+
 The sentence-form rules that no regex reaches (name the subject, no fragment, one claim
 per sentence, mechanism before reason) are held by review, not by this script.
 
 The budget, `scripts/prose-baseline.txt`, maps a path to the number of hits it is
-allowed. A file absent from it is pinned at zero, so a new or rewritten file is clean by
-default. Over budget fails; under budget also fails, with the fix being `--update`,
-which lowers a count and never raises one. Raising a count is a hand edit carrying a
-reason, so a regression appears in the diff rather than in a refresh.
+allowed. A file absent from it is held at zero, so a new or rewritten file is clean by
+default. Over budget fails; under budget also fails, with the fix being `--update`, which lowers a
+count and never raises one. Raising a count is a hand edit carrying a reason, so a
+regression appears in the diff rather than in a refresh. The baseline's entries are P5
+names the code must still read or a changelog entry must quote; every other file is at zero.
 
     python3 scripts/check-prose.py            # the check
     python3 scripts/check-prose.py --update   # lower every stale budget
@@ -55,10 +75,13 @@ SCAN_DIRS = ["src", "test", "scripts"]
 SCAN_EXT = (".clj", ".cljc", ".cljs", ".md", ".py", ".sh", ".txt", ".edn")
 # Directory names never descended into, wherever they appear: build output, vendored
 # code, and the large gitignored working directories a bench tree keeps. A sibling
-# repo's copy of this script keeps the same list, so one walk cannot be cheap here and
-# a 500 GB traversal there.
+# repo's copy of this script carries the same list for the entries its own tree can
+# hit, so one walk cannot be cheap here and a 500 GB traversal there. `.venv` and
+# `__pycache__` are where a Python virtualenv or bytecode cache lands inside a scanned
+# directory.
 SKIP_DIRNAMES = {".git", "target", "node_modules", ".clj-kondo", "build",
-                 "scratch", "corpus", "checkouts", "pdfs", "findings"}
+                 "scratch", "corpus", "checkouts", "pdfs", "findings",
+                 ".venv", "venv", "__pycache__"}
 # A generated artifact larger than this is data, not prose: reading it costs more than
 # any finding in it is worth.
 MAX_BYTES = 2 * 1024 * 1024
@@ -70,21 +93,25 @@ ROOT_MD = ["README.md", "CHANGELOG.md", "CONTRIBUTING.md", "CONTRIBUTORS.md"]
 EXEMPT = {
     "scripts/check-prose.py",
     "scripts/prose-baseline.txt",
-    "CONTRIBUTING.md",
 }
 
-# `indoors`, `IndoorsFn` and `indoors-cat` are test-world KB vocabulary about cats and
-# have nothing to do with the metaphor, so the door pattern requires a word boundary
-# that `indoor` fails.
+# Case-SENSITIVE, with the three casings spelled out, because `COne` and `CTwo` are
+# context symbols in the test world and a case-insensitive `\bcone\b` matches `COne`.
+# `indoors`, `IndoorsFn` and `indoors-cat` are test-world vocabulary about cats and have
+# nothing to do with the metaphor, so P1_NOT drops them.
+def _cased(word):
+    """A word, its Capitalised form and its SHOUTED form, as one alternation."""
+    return "|".join((word, word.capitalize(), word.upper()))
+
 P1 = re.compile(
-    r"\bdoors?\b"
-    r"|\bseams?\b"
-    r"|\bup-cones?\b|\bcones?\b"
-    r"|\bteeth\b|\bspine\b"
-    r"|the front door"
+    r"\b(?:" + "|".join(
+        _cased(w) for w in
+        ("doors", "door", "seams", "seam", "up-cones", "up-cone", "cones", "cone",
+         "teeth", "spines", "spine")
+    ) + r")\b"
+    r"|[Tt]he [Ff]ront [Dd]oor|THE FRONT DOOR"
     r"|the ground (moves|shifts)"
-    r"|holds? the line|the line to hold",
-    re.I)
+    r"|holds? the line|the line to hold")
 P1_NOT = re.compile(r"indoor", re.I)
 
 P2 = re.compile(
@@ -93,7 +120,7 @@ P2 = re.compile(
     r"|worth (writing down|stating|saying)"
     r"|costs? (you )?nothing|what it buys"
     r"|the tempting (alternative|thing)|it is tempting"
-    r"|only honest|honest option"
+    r"|\bhonest(ly)?\b|earns? (its|the|their) (place|entry)|\bpayoffs?\b"
     r"|(loud|quiet|cheap|free) enough"
     r"|and they are not the same"
     r"|, deliberately\."
@@ -105,15 +132,90 @@ P3 = re.compile(r"(^|\. )What [a-z][a-z ,'`-]{5,60} is (a|the|an|what|not) ")
 
 # A copula with `are` straight after it -- `is are`, `be are`, `are are`. No sentence
 # needs the pair, so a hit is a phrase substituted in without its verb being fixed: the
-# engine tree took 20 of them from one pass that rewrote `read as a` to `are
-# indistinguishable from a` and left `is read as a` standing as `is are indistinguishable
-# from a`. Shapes like `does not are` and `a are` are NOT here, because ellipsis makes
-# them ordinary English: "the 118 that do not are nouns" elides "carry a signature".
+# tree took 20 of them from one pass that rewrote `read as a` to `are indistinguishable
+# from a` and left `is read as a` standing as `is are indistinguishable from a`.
+# The rest of that pass -- `does not are`, `a are`, `to are` -- is NOT here, because the
+# same shapes are ordinary English by ellipsis: "the 118 that do not are nouns" elides
+# "carry a signature", and "the ops it applies to are the ones" ends a relative clause.
+# Only this direction is unambiguous, so only this direction fails the build.
 P4 = re.compile(r"(?<!-)\b(?:is|was|be|been|are|being)\s+are\b", re.I)
 # `clojure.test` publishes both `is` and `are`, so `:refer [deftest testing is are]` is a
 # require and not a sentence. The hyphen lookbehind above is for the other collision, a
 # compound ending in a copula: OpenCyc's `many states-of-being are conceptualized`.
 P4_NOT = re.compile(r":refer")
+
+# Each P5 word, the tokens blanked out of a line before it is matched, and the files the
+# word is not read in. A token is blanked rather than the match dropped, so a line holding
+# both `lein gate` and a second `gate` still fails on the second.
+P5_TERMS = [
+    (re.compile(r"[Rr]oster|ROSTER"), [r"AUTHORS\.roster"], []),
+    (re.compile(r"(?:(?<![A-Za-z])|(?<=un)|(?<=Un))gat(?:e|es|ed|ing)(?![a-z])"
+                r"|(?<![A-Z])Gat(?:e|es|ed|ing)(?![a-z])"
+                r"|(?<![A-Za-z])GAT(?:E|ES|ED|ING)(?![A-Z])"),
+     [r"\blein (?:release-)?gate\b", r"\brelease-gate\b", r"\b(?:scripts/)?gate\\?\.sh\b",
+      r"\b(?:logs|target)/gate\b", r"\b(?:VAELII_)?GATE_[A-Z_]+\b",
+      r"\bgate_(?:slot_[a-z]+|cmd|label|rev)\b", r"\bgate-lock\b", r"\bgate[ -]slots?\b",
+      r"\"gate\"", r"\bgate --[a-z-]+", r"\bgate:"],
+     ["scripts/gate.sh"]),
+    (re.compile(r"(?<![A-Za-z])(?:[Uu]n|UN|[Rr]e-?|RE-?)?(?:[Pp]in|PIN)"
+                r"(?:s|ned|ning|nable|S|NED|NING)?(?![a-z])"), [], []),
+    (re.compile(r"(?i)(?<![a-z])(?:un-?|re-?)?stamp"), [r"(?i)timestamp", r"StampedLock"], []),
+    (re.compile(r"(?i)window"),
+     [r"Windows", r"gitforwindows", r"\bwindows\?", r"on-windows", r"\"windows\"",
+      r"show:window:top", r":framing :window",
+      r"(?i)\b(?:time|timed|idle|crash|race|sprint|timeout|grace|retry|overlap|rate[- ]limit)"
+      r"[- ]windows?\b",
+      r"stat-window-ms", r"overlap-window"],
+     []),
+]
+P5_TERMS = [(pat, [re.compile(x) for x in strips], set(files)) for pat, strips, files in P5_TERMS]
+
+P6 = re.compile(r"(?<![A-Za-z])view(?:s|ed|er|ers)?(?![A-Za-z])", re.I)
+# Words holding `view` that are not the word: `preview`, `viewBox`, the spatial
+# `viewpoint`, the KB constant `image_viewing`, the test-world individual `Viewer`.
+P6_NOT = [re.compile(x, re.I) for x in (
+    r"\bpreview", r"\breview", r"viewBox", r"viewport", r"scrollIntoView",
+    r"ViewTransition", r"image_viewing", r"\bViewer\b", r"\bTmpViewer", r"viewpoint",
+    r"point of view", r"gh run view", r"gh pr view")]
+# The phrases that carry the kept sense: a named context's view, the view context,
+# the qualified views docs/reference.md defines, and the visibility idioms.
+P6_KEPT = [re.compile(x) for x in (
+    r"\*{0,2}view\*{0,2}[- _]?contexts?\b", r"viewContext",
+    r"\b[\w`*\[\]?-]+['’]s (own |whole |current |whole current )?views?\b",
+    r"\b[\w`*?-]+s['’] (own )?views?\b",
+    r"\b(own|joint|common|empty|wider|narrower) views?\b",
+    r"\bwhose view",
+    r"\b(comes?|came|coming|brings?|brought|into|out of|from|in)\s+\*?view\b\*?",
+    r"\bview (at|from|of) (`?Cx\w*`?|`[A-Za-z?][\w?-]*`|(a|the|every|each|one|any|that) "
+    r"(\w+ )?contexts?\b)",
+    r"\bviews? at (a |each |every |one |its )?contexts?\b",
+    r"\bviewed from\b",
+    r"\b(joint |deep )?viewers?\b", r"deep-viewer!",
+    r"(own|joint|common|into|the-rest-of-the|come|comes|came)-views?\b",
+    r"the-view-licenses", r":sight-view")]
+P6_SKIP = re.compile(r"^test/vaelii/ref/|^docs/(glossary|naming)\.md$")
+
+
+def _blank(pats, line):
+    for p in pats:
+        line = p.sub(lambda m: " " * len(m.group(0)), line)
+    return line
+
+
+def p5_hits(rel, line):
+    """Every P5 word in `line`, after each word's own tokens are blanked."""
+    out = []
+    for pat, strips, files in P5_TERMS:
+        if rel in files:
+            continue
+        out += [m.group(0) for m in pat.finditer(_blank(strips, line))]
+    return out
+
+
+def p6_bare(line):
+    """Is there a `view` in `line` that no kept phrase accounts for?"""
+    probe = _blank(P6_NOT, line)
+    return bool(P6.search(_blank(P6_KEPT, probe))) if P6.search(probe) else False
 
 
 def scan_files():
@@ -132,7 +234,8 @@ def scan_files():
                         continue
                 except OSError:
                     continue
-                seen.append(os.path.relpath(full, ROOT))
+                # `/`-spelled on every OS: EXEMPT and the baseline name files that way
+                seen.append(os.path.relpath(full, ROOT).replace(os.sep, "/"))
     for fn in ROOT_MD:
         if os.path.exists(os.path.join(ROOT, fn)):
             seen.append(fn)
@@ -149,7 +252,19 @@ def hits_in(rel):
         lines = open(path, errors="replace").read().splitlines()
     except OSError:
         return out
+    # P5 and P6 stop at the first released CHANGELOG section
+    frozen = len(lines) + 1
+    if rel == "CHANGELOG.md":
+        frozen = next((i for i, l in enumerate(lines, 1) if l.startswith(("## 0.", "## [0."))),
+                      frozen)
     for i, line in enumerate(lines, 1):
+        if i < frozen:
+            out += [(i, "P5", w) for w in p5_hits(rel, line)]
+            if not P6_SKIP.search(rel) and p6_bare(line):
+                prev = " ".join(lines[i - 2].split()[-3:]) if i > 1 else ""
+                head = re.sub(r"^\s*(;+|#+|\*|//)?\s*", "", line)
+                if p6_bare(prev + " " + head):
+                    out.append((i, "P6", "view"))
         for code, pat in (("P1", P1), ("P2", P2), ("P3", P3), ("P4", P4)):
             for m in pat.finditer(line):
                 text = m.group(0).strip()
@@ -179,20 +294,20 @@ def read_baseline():
 
 
 HEADER = """\
-# Per-file prose budget for scripts/check-prose.py -- the count of P1/P2/P3 hits each
+# Per-file prose budget for scripts/check-prose.py -- the count of P1-P6 hits each
 # file is allowed to carry while the tree is rewritten into literal technical language
-# (the engine's CONTRIBUTING.md §3.9).
+# (the engine's CONTRIBUTING.md §3.10).
 #
-# Format: <count>\\t<path>\\t<reason>.  A file absent from this list is pinned at ZERO,
+# Format: <count>\\t<path>\\t<reason>.  A file absent from this list is held at ZERO,
 # so a new file and a rewritten one are clean by default.
 #
 # The ratchet: `--update` LOWERS a count and never raises one.  Raising a count is a
 # hand edit that carries its reason on the line, so a regression shows up in the diff
 # rather than in a refresh.  A file whose real count is below its budget fails until it
-# is re-pinned, which is what keeps the number on this page moving down.
+# is lowered with `--update`, which is what keeps the number on this page moving down.
 #
-# CHANGELOG.md is pinned at its shipped count and is not rewritten: released entries
-# are the public record of what a version did.
+# The entries are P5 names the code must still read or a changelog entry must quote
+# (the engine's CONTRIBUTING.md §3.10); every other file is at ZERO.
 """
 
 
@@ -237,10 +352,10 @@ def main():
         total = sum(v for v in merged.values())
         print(f"prose baseline: {len(merged)} files, {total} hits allowed")
         if raised:
-            print("\nNOT lowered -- these files are OVER their pinned budget, and "
+            print("\nNOT lowered -- these files are OVER their budget, and "
                   "--update never raises one:")
             for rel, was, now in sorted(raised):
-                print(f"  {rel}: pinned {was}, found {now}")
+                print(f"  {rel}: budget {was}, found {now}")
             return 1
         return 0
 
@@ -264,7 +379,7 @@ def main():
 
     if over:
         print("prose: metaphor or aphorism over the file's budget. State what the "
-              "code does, literally (the engine's CONTRIBUTING.md §3.9).\n")
+              "code does, literally (the engine's CONTRIBUTING.md §3.10).\n")
         for rel, allowed, n in over:
             print(f"  {rel}: {n} hits, budget {allowed}")
             for ln, code, text in detail[rel][:6]:
@@ -274,7 +389,7 @@ def main():
                       f"(python3 scripts/check-prose.py --list)")
         print()
     if stale:
-        print("prose: these files are now BELOW their pinned budget. Re-pin them so "
+        print("prose: these files are now BELOW their budget. Lower them with --update so "
               "the ratchet holds the gain:\n")
         for rel, allowed, n in stale:
             print(f"  {rel}: {n} hits, budget {allowed}")

@@ -26,7 +26,7 @@ git rebase HEAD~N --signoff   # sign off the last N commits, if you forgot
 The [DCO GitHub App](https://github.com/apps/dco) checks every commit in a
 pull request and blocks the merge if any is missing a sign-off.
 
-## Where this adapter's behaviour is pinned
+## Where this adapter's behaviour is specified
 
 This repo implements protocols the engine owns, so a patch here answers to a
 contract written somewhere else. `vaelii.impl.protocols` is that contract and the

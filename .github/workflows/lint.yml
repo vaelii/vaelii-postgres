@@ -1,9 +1,10 @@
 name: lint
 
-# Static-analysis gate — `lein lint` (scripts/lint.sh): clj-kondo, cljfmt,
-# shellcheck, and the reflection ratchet. One job, because the script runs all
-# four and is deliberately NOT fail-fast; splitting them would cost a JVM boot
-# each to learn what one run already knows, and would lose the report.
+# Static-analysis check — `lein lint` (scripts/lint.sh): clj-kondo, cljfmt,
+# shellcheck, the prose check and the reflection ratchet. One job, because the
+# script runs all five and is deliberately NOT fail-fast; splitting them would
+# cost a JVM boot each to learn what one run already knows, and would lose the
+# report.
 #
 # Unlike the engine's own lint, the reflection ratchet here AOT-compiles the
 # adapter's namespace, which requires the engine's snapshot protocol — so core is
@@ -68,9 +69,9 @@ jobs:
           java-version: '25'
 
       # kondo runs as a standalone binary, not through lein — `lein lint-kondo`
-      # shells out to it — so this installs both, each pinned: the action is a
-      # SHA, and `clj-kondo:` names a version rather than taking *latest*, so a
-      # kondo release cannot turn this workflow red with no change here.
+      # shells out to it — so this installs both, each at a fixed version: the
+      # action is a SHA, and `clj-kondo:` names a version rather than taking
+      # *latest*, so a kondo release cannot turn this workflow red with no change here.
       - name: Set up Leiningen and clj-kondo
         uses: DeLaGuardo/setup-clojure@4c7a6f613e5089821bb3bb2a33a3ee115578580d  # 13.6.1
         with:

@@ -28,7 +28,7 @@
     and the caller rebuilds.  That is the file sink's \"write `manifest.edn`
     last\" rule, but enforced by the database rather than by ordering: a failed
     write rolls back the sections too, it does not leave half of them;
-  * the validity stamp (`kv/index-layout-version` and the records fingerprint)
+  * the validity key (`kv/index-layout-version` and the records fingerprint)
     rides both a **column** (queryable) and the manifest blob, and the
     validate-or-discard check is the shared `vaelii.impl.io.snapshot/decision` — a mismatched
     image is discarded and the source rebuilds, never trusted.

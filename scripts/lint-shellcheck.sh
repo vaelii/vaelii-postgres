@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 # scripts/lint-shellcheck.sh — shellcheck over this repo's shell scripts.
 #
-# THE ROSTER LIVES HERE AND ONLY HERE.  `lein lint` (via scripts/lint.sh) and the
+# THE SCRIPT LIST LIVES HERE AND ONLY HERE.  `lein lint` (via scripts/lint.sh) and the
 # granular `lein lint-shellcheck` both run this file, so the list cannot say one
-# thing to one caller and another to the other.  A roster stated twice is one that
-# drifts, and the drift is silent: the entry point reading the shorter list
-# reports the same clean row over fewer scripts.
+# thing to one caller and another thing to the other.  A list stated twice is
+# one that drifts, and the drift is silent: the entry point reading the shorter
+# list reports the same clean row over fewer scripts.
 #
 # Named one by one rather than globbed, so adding a script is a decision — and so
 # the list has to be kept.  A script missing from it is one nothing checks, which
@@ -31,23 +31,23 @@ if ! command -v shellcheck >/dev/null 2>&1; then
   exit 127
 fi
 
-# Both directions, because each fails silently on its own.  A roster naming a
+# Both directions, because each fails silently on its own.  A list naming a
 # script the tree no longer has leaves shellcheck reading a shorter list; a script
-# the tree has and the roster does not is the one nothing checks.  Neither shows
+# the tree has and the list does not is the one nothing checks.  Neither shows
 # up in shellcheck's own exit status, which is why they are asked here.
 drift=0
 
 for f in "${SCRIPTS[@]}"; do
   [[ -f "$f" ]] && continue
-  echo "lint-shellcheck: $f is in the roster and not in the tree — drop it here." >&2
+  echo "lint-shellcheck: $f is in the script list and not in the tree — drop it here." >&2
   drift=1
 done
 
-# Every shell script under scripts/ must be in the roster.  A new one added is a
+# Every shell script under scripts/ must be in the list.  A new one added is a
 # decision to state here rather than one to infer.
 while IFS= read -r f; do
   printf '%s\n' "${SCRIPTS[@]}" | grep -qxF "$f" && continue
-  echo "lint-shellcheck: $f is a shell script nothing checks — add it to the roster in $0." >&2
+  echo "lint-shellcheck: $f is a shell script nothing checks — add it to the list in $0." >&2
   drift=1
 done < <(find scripts -name '*.sh' | sort)
 

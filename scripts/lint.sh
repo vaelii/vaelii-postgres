@@ -3,12 +3,13 @@
 #
 # Trimmed port of vaelii core's scripts/lint.sh. This adapter is a single
 # namespace with no docs tree, so core's glossary / versions / links / drift /
-# unused / authorship checks don't apply; what's left is the four that do:
+# unused / authorship checks don't apply; what's left is the five that do:
 #
 #   - kondo       clj-kondo over src + test   (native binary; a NOTE under the
-#                 row when the local version is not the CI pin)
+#                 row when the local version is not CI's)
 #   - cljfmt      `lein cljfmt check` — formatting     (config in project.clj :cljfmt)
 #   - shellcheck  the repo's shell scripts, via scripts/lint-shellcheck.sh
+#   - prose       scripts/check-prose.py against scripts/prose-baseline.txt
 #   - reflect     a compile pass over src; any reflection/boxing warning fails —
 #                 see the header of scripts/check-reflection.sh
 #
@@ -118,22 +119,22 @@ check() {
   print_status "$label" "$rc" "$out" "$t"
 }
 
-# kondo_version_note — say so when the local clj-kondo is not the one CI pins.
-# A NOTE and never a failure: a package manager can lag the pin for weeks, and
-# refusing to lint during that window costs more than the drift it would report.
+# kondo_version_note — say so when the local clj-kondo is not the one CI uses.
+# A NOTE and never a failure: a package manager can lag CI's version for weeks,
+# and refusing to lint during that time window costs more than the drift it would report.
 # Silent when the two agree, and when either side cannot be read.
 kondo_version_note() {
-  local pin have
+  local ci_ver have
   command -v clj-kondo >/dev/null 2>&1 || return 0
-  pin="$(sed -n 's/^[[:space:]]*clj-kondo:[[:space:]]*\([0-9][0-9.]*\).*/\1/p' \
+  ci_ver="$(sed -n 's/^[[:space:]]*clj-kondo:[[:space:]]*\([0-9][0-9.]*\).*/\1/p' \
            .github/workflows/lint.yml 2>/dev/null | head -1)"
   have="$(clj-kondo --version 2>/dev/null \
             | grep -oE '[0-9]{4}\.[0-9]{2}\.[0-9]{2}' | head -1)"
-  [[ -n "$pin" && -n "$have" && "$pin" != "$have" ]] || return 0
-  printf '  %-11s %s! local %s, CI pins %s — CI can fail on what this passes%s\n' \
-         '' "$YELLOW" "$have" "$pin" "$RST"
+  [[ -n "$ci_ver" && -n "$have" && "$ci_ver" != "$have" ]] || return 0
+  printf '  %-11s %s! local %s, CI uses %s — CI can fail on what this passes%s\n' \
+         '' "$YELLOW" "$have" "$ci_ver" "$RST"
   printf '  %-11s %s  brew upgrade borkdude/brew/clj-kondo, or install-clj-kondo --version %s%s\n' \
-         '' "$DIM" "$pin" "$RST"
+         '' "$DIM" "$ci_ver" "$RST"
 }
 
 printf '%slint%s\n' "$BOLD" "$RST"
@@ -141,7 +142,7 @@ printf '%slint%s\n' "$BOLD" "$RST"
 check kondo      -- clj-kondo --lint src test
 kondo_version_note
 check cljfmt     -- lein cljfmt check
-# The roster is that script's, not this one's, and `lein lint-shellcheck` runs the
+# The script list is that script's, not this one's, and `lein lint-shellcheck` runs the
 # same file — one list, so it cannot be complete for one caller and short for the
 # other. It also checks itself against the tree, both directions.
 check shellcheck -- bash scripts/lint-shellcheck.sh

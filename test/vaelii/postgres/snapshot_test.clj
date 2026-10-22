@@ -2,8 +2,8 @@
 ;; Copyright © 2026 Vaelii LLC and the Vaelii contributors.
 (ns vaelii.postgres.snapshot-test
   "The Postgres snapshot sink, exercised against a live server, or skipped with a
-  printed reason when none answers — `vaelii.postgres.test-util` is the gate and says
-  how to point the suite at one."
+  printed reason when none answers — `vaelii.postgres.test-util` holds the presence
+  check and says how to point the suite at one."
   (:require [clojure.test :refer [deftest is]]
             [next.jdbc :as jdbc]
             [vaelii.core :as v]
@@ -70,15 +70,15 @@
                           _      (do (v/assert src-kb '(likes Muffet Tom) 'CxTest)
                                      (v/assert src-kb '(likes Tom Jerry) 'CxTest)
                                      (v/assert src-kb '(genls Cat Animal) 'CxTest))
-                          stamp  "records-fingerprint-A"
+                          fp     "records-fingerprint-A"
                           ;; write the source KB's index projection to Postgres
                           _      (with-open [sink (pg/pg-sink ds image)]
-                                   (snap/save-index! sink (:index src-kb) stamp))
+                                   (snap/save-index! sink (:index src-kb) fp))
                           ;; load it into a fresh, emptied index
                           dst-kb (v/open-kb {:backend :memory})
                           _      (p/clear-index! (:index dst-kb))
-                          result (snap/load-index! (pg/pg-source ds image) (:index dst-kb) stamp)]
-                      (is (= :replayed (:index result)) "a matching stamp replays the image")
+                          result (snap/load-index! (pg/pg-source ds image) (:index dst-kb) fp)]
+                      (is (= :replayed (:index result)) "a matching fingerprint replays the image")
                       (is (pos? (long (:entries result))) "and installs its entries")
                       (is (= (index-entry-set (:index src-kb))
                              (index-entry-set (:index dst-kb)))
@@ -92,10 +92,10 @@
                     (let [kb (v/open-kb {:backend :memory})]
                       (v/assert kb '(likes Muffet Tom) 'CxTest)
                       (with-open [sink (pg/pg-sink ds image)]
-                        (snap/save-index! sink (:index kb) "stamp-A"))
-                      (let [result (snap/load-index! (pg/pg-source ds image) (:index kb) "stamp-B")]
+                        (snap/save-index! sink (:index kb) "fingerprint-A"))
+                      (let [result (snap/load-index! (pg/pg-source ds image) (:index kb) "fingerprint-B")]
                         (is (= {:index :rebuild :reason :records-differ} result)
-                            "an image whose records stamp disagrees is discarded, the caller rebuilds"))))))))
+                            "an image whose records fingerprint disagrees is discarded, the caller rebuilds"))))))))
 
 (deftest an-uncommitted-write-leaves-no-image
   ;; the single-transaction rule: a sink closed without commit! rolls the whole
@@ -126,7 +126,7 @@
          "no tables reads as no manifest")
      (let [kb (v/open-kb {:backend :memory})]
        (is (= {:index :rebuild :reason :absent}
-              (snap/load-index! (pg/pg-source ds "never-written") (:index kb) "stamp"))
+              (snap/load-index! (pg/pg-source ds "never-written") (:index kb) "fingerprint"))
            "so a first-run load-index! rebuilds rather than throwing"))
      (is (do (pg/drop-image! ds "never-written") true)
          "and drop-image! is quiet"))))

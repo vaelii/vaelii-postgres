@@ -1,11 +1,11 @@
 ;; SPDX-License-Identifier: Apache-2.0
 ;; Copyright © 2026 Vaelii LLC and the Vaelii contributors.
 (ns vaelii.postgres.test-util
-  "The server gate, shared by every test in this repo.
+  "The server presence check, shared by every test in this repo.
 
-  **The suite must not need a server.**  Every db-touching test is gated on a reachable
-  Postgres and **skips with a printed reason** when there is none, so `lein test` on a
-  machine with no database is green and means what it says.  The gate is never inverted
+  **The suite must not need a server.**  Every db-touching test runs only when a Postgres
+  server answers, and **skips with a printed reason** when none does, so `lein test` on a
+  machine with no database is green and means what it says.  The check is never inverted
   — live unless something disables it — because a stray `PGHOST` in an environment would
   then silently change what a run covers.
 

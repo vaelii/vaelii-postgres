@@ -1,6 +1,7 @@
 name: authorship
 
-# The gate that asks WHO a commit's named parties are. The other gates cannot:
+# The required check that asks WHO a commit's named parties are. The other required
+# checks cannot:
 # the DCO app matches a `Signed-off-by:` string against the commit's author
 # field, and cla-assistant (where a repo runs it) reports that an account
 # completed an OAuth flow. Both are string matchers over an account and a
@@ -8,28 +9,28 @@ name: authorship
 # the certification. This repo's CONTRIBUTING requires exactly that.
 #
 # THE RULES ARE NOT IN THIS REPO. `vaelii/.github/actions/authorship` carries the
-# roster reader and the matching rules for every repo in the org — one file
+# admitted-accounts reader and the matching rules for every repo in the org — one file
 # rather than one copy per repo, which is what the four copies before it had
-# already started to drift apart from. It is pinned below by SHA, as every other
+# already started to drift apart from. It is referenced below by SHA, as every other
 # `uses:` here is: a tag is a mutable ref whoever holds the account can repoint,
-# a SHA is the artifact, and the pin is the review point for a rule change.
+# a SHA is the artifact, and the SHA reference is the review point for a rule change.
 #
-# WHAT IS IN THIS REPO IS THE ROSTER. `.github/AUTHORS.roster` lists the accounts
+# WHAT IS IN THIS REPO IS THE LIST. `.github/AUTHORS.roster` lists the accounts
 # a maintainer has admitted HERE; every author, committer and trailer on a pull
 # request has to appear in it. An account nobody has admitted fails closed,
-# whatever it is: the gate reads the roster, not the account. Nobody is admitted
+# whatever it is: the check reads the list, not the account. Nobody is admitted
 # ahead of a contribution and no repo carries a copy of another repo's
 # contributors — a first pull request waits on one line, added before the merge.
 #
-# The action reads that roster from the pull request's **base** ref over the API,
+# The action reads that list from the pull request's **base** ref over the API,
 # never from the pull request's own tree, so a contributor cannot admit
-# themselves in the same change the roster exists to gate.
+# themselves in the same change the list exists to check.
 #
 # `pull_request`, never `pull_request_target`: the action reads public metadata,
 # touches no secret and writes nothing back, so it has no privilege a fork's pull
 # request could borrow.
 #
-# A RUN WITH NO PULL REQUEST IS GREEN AND MEANS NOTHING. This gate reads the
+# A RUN WITH NO PULL REQUEST IS GREEN AND MEANS NOTHING. This check reads the
 # commits of a pull request; every other event — a push, a schedule, a manual
 # dispatch — carries none, so the action says so and exits 0. That green is the
 # reading to distrust: it reports that there was nothing to check.
@@ -39,7 +40,7 @@ name: authorship
 # says `workflow_dispatch:` and the release carve rewrites it to add push and
 # pull_request. The rewrite matches the two lines below **exactly**, so do not
 # reformat them, add a comment between them, or give `workflow_dispatch` any
-# inputs — the carve would silently leave this gate off, and a public repo
+# inputs — the carve would silently leave this check off, and a public repo
 # merging a pull request nobody vouched for is the failure it exists to prevent.
 #
 # THE CHECK BEING PRESENT IS NOT THE CHECK BEING REQUIRED. Shipping this file
@@ -47,8 +48,8 @@ name: authorship
 # that scripts/protect-branches.sh sets on `develop`, which is a settings change
 # and not a carve.
 #
-# THE PIN IS A DEPENDENCY ON A REPO THAT MUST BE PUBLIC AND PUSHED. `vaelii/.github`
-# is cut and force-pushed by the maintainer; a pin naming a commit that is not
+# THE SHA REFERENCE IS A DEPENDENCY ON A REPO THAT MUST BE PUBLIC AND PUSHED. `vaelii/.github`
+# is cut and force-pushed by the maintainer; a SHA naming a commit that is not
 # there yet fails the run with "action not found" rather than passing quietly.
 # carve:strip-end
 
@@ -59,7 +60,7 @@ on:
   workflow_dispatch:
 
 # Least privilege. `contents: read` and `pull-requests: read` are what the action
-# reads the roster and the commit list with. Nothing else, and no write.
+# reads the admitted-accounts list and the commit list with. Nothing else, and no write.
 permissions:
   contents: read
   pull-requests: read
@@ -74,7 +75,7 @@ jobs:
     name: authorship
     runs-on: ubuntu-latest
     steps:
-      # No checkout: the action reads the commits, the profiles and the roster
-      # over the API, and the roster it reads is the base branch's rather than
+      # No checkout: the action reads the commits, the profiles and the list
+      # over the API, and the list it reads is the base branch's rather than
       # this pull request's.
       - uses: vaelii/.github/actions/authorship@a973b4674126344fa7fb870c20d637c9d68b9022  # vaelii/.github@main, 2026-08-24

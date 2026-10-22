@@ -11,7 +11,7 @@
 # it loads core SOURCE through the checkouts/vaelii symlink
 # (scripts/link-checkouts.sh) under the same flag, so a reflection leak in the
 # code paths the adapter touches surfaces here too.  The test tree is not compiled
-# here (that would need a live-server gate to mean anything); `lein test` compiles
+# here (that would need a live server to mean anything); `lein test` compiles
 # it under the same flag when a server is configured.
 #
 #   scripts/check-reflection.sh                  # compile src, fail on any warning

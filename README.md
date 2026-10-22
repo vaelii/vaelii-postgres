@@ -26,8 +26,8 @@ lives in a database an operator already runs. Core selects it as `:pg-memory` (t
 derived index in RAM, rebuilt on every open), `:pg-disk-log` (the durable index, which
 is **local** to the host running the writer and does not travel with the KB), or
 `:pg-snapshot` (the index image and the reasoning image in a local directory, installed
-on open instead of reindexing and recovering while the records' stamp row says nothing
-was written behind them).
+on open instead of reindexing and recovering while the records' fingerprint row says
+nothing was written behind them).
 
 What a server buys, stated narrowly:
 
@@ -46,10 +46,10 @@ second writer fast the way a file lock does.
 
 The round trip is what the store's shape answers to: an uncached point read is
 **282.6 µs** against the `:disk-log` store's 0.26 µs warm, and **0.38 µs** on a fetch-LRU
-hit. So the cache is the backend's viability rather than a tuning knob, the
-premise-strength cache is filled by the `premise-ids` walk that precedes every read of
-it, and the enumerations run on a server-side cursor because `reindex` and `recover`
-walk all of them.
+hit. So the cache is the backend's viability rather than a tuning knob, the premise
+strengths are held as one compressed handle set per strength, filled by the
+`premise-ids` walk that precedes every read of them, and the enumerations run on a
+server-side cursor because `reindex` and `recover` walk all of them.
 
 ### `vaelii.postgres.snapshot` — the KB image in a database
 
@@ -153,8 +153,8 @@ Each test works in a schema of its own and drops it afterwards.
 Point the suite at a server with `VAELII_PG_URL`, or the `POSTGRES_HOST` /
 `POSTGRES_PORT` / `POSTGRES_DB` / `POSTGRES_USER` / `POSTGRES_PASSWORD` variables;
 it defaults to `localhost:5432/vaelii` as the current OS user. A stray `PGHOST`
-never changes what `lein test` means — every database test is gated on a
-reachable server.
+never changes what `lein test` means — every database test runs only when a
+server answers.
 
 ## License
 

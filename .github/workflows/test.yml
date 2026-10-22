@@ -1,7 +1,7 @@
 name: test
 
 # The adapter's own suite (test/vaelii/postgres/snapshot_test.clj), run against a
-# live Postgres. Every db-touching test is gated on a reachable server and skips
+# live Postgres. Every db-touching test runs only when a server answers, and skips
 # with a printed reason otherwise, so this job stands up a `postgres:16` service
 # and points the suite at it with VAELII_PG_URL — without it the run is green but
 # vacuous. The tests require the engine (vaelii.core / the snapshot protocol), so core
@@ -44,7 +44,7 @@ jobs:
           POSTGRES_DB: vaelii
         ports:
           - 5432:5432
-        # Hold the job at the gate until the server answers, so the first test
+        # Hold the job back until the server answers, so the first test
         # doesn't race a still-booting container into a spurious skip.
         options: >-
           --health-cmd "pg_isready -U vaelii"

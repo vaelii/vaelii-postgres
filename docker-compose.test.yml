@@ -1,7 +1,7 @@
 # A server for `lein test`, and nothing else.
 #
-# Every db-touching test in this repo is gated on a reachable Postgres and skips
-# with a printed reason when there is none, so the suite is green without this
+# Every db-touching test in this repo runs only when a Postgres server answers, and
+# skips with a printed reason when none does, so the suite is green without this
 # file. What it is *not* is covered — the record store's oracle, its durability
 # and its COPY path are the tests that need a server — so a change to
 # `vaelii.postgres.record-store` is landed against a run that had one.

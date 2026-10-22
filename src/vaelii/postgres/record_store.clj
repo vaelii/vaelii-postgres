@@ -41,10 +41,11 @@
   * `vaelii_record_stamp (store_id, writes)`, one row: a uuid minted when the row is
     first made, and a count a statement-level trigger on `vaelii_record` moves in the same
     transaction as every insert, update, delete and truncate — `COPY` included.  It is the
-    stamp an index or reasoning image is validated against (`p/ImageStamping`), so a KB can
-    keep both images beside records on a server (`:pg-snapshot`): one row read at open
-    says whether the records moved since the images were written, and the uuid says whether
-    they are the same records at all.  A rolled-back statement does not move it.
+    fingerprint an index or reasoning image is validated against
+    (`p/ImageFingerprinting`), so a KB can keep both images beside records on a server
+    (`:pg-snapshot`): one row read at open says whether the records moved since the images
+    were written, and the uuid says whether they are the same records at all.  A
+    rolled-back statement does not move it.
 
   A put is **one statement**, not a transaction: a data-modifying CTE writes the record
   and moves `high_water` together, so a write costs one round trip rather than a
@@ -58,10 +59,10 @@
 
   * a **fetch LRU per kind** in front of every read, so a hot handle never reaches the
     server;
-  * a **premise-strength cache** filled by the `premise-ids` walk itself — the walk
-    already selects the column, and `recover` asks for every one of those strengths
-    immediately afterwards, so the pair costs one scan instead of one scan plus a round
-    trip per premise;
+  * **premise strengths** held as one compressed handle set per strength, filled by the
+    `premise-ids` walk itself — the walk already selects the column, and `recover` asks
+    for every one of those strengths immediately afterwards, so the pair costs one scan
+    instead of one scan plus a round trip per premise, at any premise count;
   * **enumeration streams** through a server-side cursor (`reduce-rows`): autocommit
     off and a set fetch size, which is what makes the driver hand back a portal instead
     of buffering the whole result.
@@ -93,14 +94,13 @@
             [taoensso.nippy :as nippy]
             [vaelii.impl.disk.codec :as codec]
             [vaelii.impl.disk.durability :as dur]
+            [vaelii.impl.handle-set :as handle-set]
             [vaelii.impl.profile :as prof]
-            [vaelii.impl.protocols :as p]
-            [vaelii.impl.roster :as roster])
+            [vaelii.impl.protocols :as p])
   (:import [com.zaxxer.hikari HikariConfig HikariDataSource]
            [java.io ByteArrayOutputStream Closeable DataOutputStream]
            [java.sql Connection PreparedStatement ResultSet]
-           [java.util ArrayList Collections LinkedHashMap Map]
-           [java.util.concurrent ConcurrentHashMap]
+           [java.util ArrayList Collections HashMap LinkedHashMap Map Map$Entry]
            [java.util.concurrent.locks ReentrantReadWriteLock]
            [javax.sql DataSource]
            [org.postgresql PGConnection]
@@ -139,7 +139,7 @@
         rec  (str q "vaelii_record")
         prov (str q "vaelii_record_provenance")
         meta (str q "vaelii_record_meta")
-        stamp (str q "vaelii_record_stamp")]
+        fp   (str q "vaelii_record_stamp")]
     {:ddl-schema     (when schema (str "CREATE SCHEMA IF NOT EXISTS " schema))
      :ddl-record     (str "CREATE TABLE IF NOT EXISTS " rec " (
                              id       bigint   PRIMARY KEY,
@@ -157,24 +157,24 @@
      :ddl-meta       (str "CREATE TABLE IF NOT EXISTS " meta " (
                              k text   PRIMARY KEY,
                              v bigint NOT NULL)")
-     ;; the image stamp: one row, never truncated by `:clear` (the trigger counts the
-     ;; truncate instead), so a cleared store's count moves past every image of its
-     ;; previous content
-     :ddl-stamp      (str "CREATE TABLE IF NOT EXISTS " stamp " (
+     ;; the records fingerprint: one row, never truncated by `:clear` (the trigger
+     ;; counts the truncate instead), so a cleared store's count moves past every image
+     ;; of its previous content
+     :ddl-fingerprint (str "CREATE TABLE IF NOT EXISTS " fp " (
                              one      boolean PRIMARY KEY DEFAULT true CHECK (one),
                              store_id uuid    NOT NULL DEFAULT gen_random_uuid(),
                              writes   bigint  NOT NULL DEFAULT 0)")
-     :seed-stamp     (str "INSERT INTO " stamp " (one) VALUES (true) ON CONFLICT DO NOTHING")
+     :seed-fingerprint (str "INSERT INTO " fp " (one) VALUES (true) ON CONFLICT DO NOTHING")
      :ddl-bump-fn    (str "CREATE OR REPLACE FUNCTION " q "vaelii_record_bump()
                            RETURNS trigger LANGUAGE plpgsql AS $$
                            BEGIN
-                             UPDATE " stamp " SET writes = writes + 1;
+                             UPDATE " fp " SET writes = writes + 1;
                              RETURN NULL;
                            END $$")
      :ddl-bump       (str "CREATE OR REPLACE TRIGGER vaelii_record_bump"
                           " AFTER INSERT OR UPDATE OR DELETE OR TRUNCATE ON " rec
                           " FOR EACH STATEMENT EXECUTE FUNCTION " q "vaelii_record_bump()")
-     :stamp          (str "SELECT store_id::text AS store, writes FROM " stamp)
+     :fingerprint    (str "SELECT store_id::text AS store, writes FROM " fp)
      ;; one statement, one round trip: the record and the high-water mark move
      ;; together.  A re-put replaces the record and its authoritative strength and
      ;; leaves `premise` alone, so a re-put keeps a mark.
@@ -216,8 +216,8 @@
      :get-prov       (str "SELECT prov FROM " prov " WHERE id = ?")
      :del-prov       (str "DELETE FROM " prov " WHERE id = ?")
      :sentex-ids     (str "SELECT id FROM " rec " WHERE kind = " kind-sentex)
-     ;; the `Tallying` half: the questions a caller asks the roster that do not need the
-     ;; roster.  A count is an index-only scan of one column; a sample stops at the first
+     ;; the `Tallying` half: the questions a caller asks the handle set that do not need
+     ;; the set.  A count is an index-only scan of one column; a sample stops at the first
      ;; row.  Both replace a walk that puts every handle in the store on the wire.
      :sentex-count   (str "SELECT count(*) FROM " rec " WHERE kind = " kind-sentex)
      :just-count     (str "SELECT count(*) FROM " rec " WHERE kind = " kind-justification)
@@ -263,8 +263,8 @@
 
 (defn- id-ok?
   "The record protocol is asked for non-integer and negative handles — an informant
-  keyword lands here — and must answer nil rather than throw.  Gate every fetch on
-  this."
+  keyword lands here — and must answer nil rather than throw.  Every fetch checks
+  this first."
   [id]
   (and (integer? id) (not (neg? ^long id))))
 
@@ -280,7 +280,7 @@
 ;; — the fetch reinstalls a record `delete-sentex!` has just purged, and it stays installed
 ;; until the LRU evicts it, so a retracted fact goes on answering a reader's queries.  The
 ;; engine supports exactly that arrangement (`docs/storage.md`, one writer and a reader
-;; beside it), so the window is reachable rather than theoretical.
+;; beside it), so the race window is reachable rather than theoretical.
 ;;
 ;; A **read/write** lock rather than the sibling stores' exclusive one, because this store
 ;; is pooled and concurrent reads are the reason it is: fills share the read side and only
@@ -305,6 +305,55 @@
 
 (defn- str->strength [s] (some-> s keyword))
 (defn- strength->str [k] (some-> k name))
+
+;; ---- the premise strengths ----------------------------------------------
+;;
+;; `premise-strength` answers from a map of strength to a `vaelii.impl.handle-set` live
+;; handle set: a handle in the `:monotonic` set has strength `:monotonic`.  A strength is
+;; one of a few keywords, so the map holds a few entries, and each set holds its premises
+;; at a fraction of a byte a handle where a map from handle to strength holds a boxed entry
+;; apiece.  A handle in no set answers from the `strength` column.
+;;
+;; A live handle set synchronizes nothing, so each function below holds the map's monitor.
+;; The writes that move a strength call them under `mutating`, and the walk installs under
+;; `filling`, so the cache guard above orders a walk's install against every mutation.
+
+(defn- strength-set!
+  "The live handle set for strength `st` in `sets`, added empty when absent.  The caller
+  holds the monitor of `sets`, or owns `sets` outright."
+  [^Map sets st]
+  (or (.get sets st)
+      (let [s (handle-set/live-handle-set)] (.put sets st s) s)))
+
+(defn- drop-strength!
+  "Remove handle `id` from every strength set."
+  [^Map sets id]
+  (locking sets
+    (doseq [s (.values sets)] (handle-set/live-remove! s id))))
+
+(defn- set-strength!
+  "Record strength `st` for handle `id`, removing `id` from every other strength's set."
+  [^Map sets id st]
+  (locking sets
+    (doseq [s (.values sets)] (handle-set/live-remove! s id))
+    (handle-set/live-add! (strength-set! sets st) id)))
+
+(defn- strength-in
+  "The strength whose set holds handle `id`, or nil when no set does."
+  [^Map sets id]
+  (locking sets
+    (reduce (fn [_ ^Map$Entry e]
+              (when (handle-set/live-has? (.getValue e) id) (reduced (.getKey e))))
+            nil (.entrySet sets))))
+
+(defn- replace-strengths!
+  "Replace every strength set in `sets` with the sets in `fresh`."
+  [^Map sets ^Map fresh]
+  (locking sets
+    (.clear sets)
+    (.putAll sets fresh)))
+
+(defn- clear-strengths! [^Map sets] (locking sets (.clear sets)))
 
 ;; ---- streaming enumeration ----------------------------------------------
 
@@ -340,8 +389,8 @@
         (try (.setAutoCommit c restore) (catch Exception _ nil))
         (.close c)))))
 
-(defn- id-roster
-  "Every handle `sql` selects, as a `vaelii.impl.roster` set.
+(defn- id-handle-set
+  "Every handle `sql` selects, as a `vaelii.impl.handle-set` set.
 
   A set and not a stream, because the protocol says so: `recover` tests membership in the
   live handles for every premise it roots and for every antecedent of every
@@ -349,32 +398,32 @@
   the *walk* — the driver never holds the whole result.
 
   **Compressed, because this is the store the shape costs something on.**  A
-  `PersistentHashSet<Long>` retains 48–75 bytes a handle, so the roster of a 100M-record
+  `PersistentHashSet<Long>` retains 48–75 bytes a handle, so the set of a 100M-record
   store is 4.5–7.0 GB of the caller's heap before a record is fetched; handles arrive
   from the cursor in a near-contiguous run, which a bitmap holds in a few run containers
   at 0.13–0.26 bytes apiece — and answers `contains?` faster than the hash set, not
   slower (core's `docs/storage.md`, the enumeration contract)."
   [store sql]
-  (let [[add! finish] (roster/collector)]
+  (let [[add! finish] (handle-set/collector)]
     (reduce-rows store sql []
                  (fn [acc ^ResultSet rs] (add! (.getLong rs 1)) acc)
                  nil)
     (finish)))
 
-;; ---- the image stamp ----------------------------------------------------
+;; ---- the records fingerprint --------------------------------------------
 
-(defn- read-stamp
-  "`{:store uuid-string :writes n}`, read fresh off the stamp row.  Never cached: the stamp
-  vouches for an image against what the server holds now, and a copy held here would
-  vouch for one written before a write this process never saw."
+(defn- read-fingerprint
+  "`{:store uuid-string :writes n}`, read fresh off the fingerprint row.  Never cached: the
+  fingerprint vouches for an image against what the server holds now, and a copy held
+  here would vouch for one written before a write this process never saw."
   [ds sql]
-  (let [{:keys [store writes]} (jdbc/execute-one! ds [(:stamp sql)] lower-maps)]
+  (let [{:keys [store writes]} (jdbc/execute-one! ds [(:fingerprint sql)] lower-maps)]
     {:store store :writes (long writes)}))
 
 ;; ---- the store ----------------------------------------------------------
 
 (defrecord PgRecordStore [ds sql counter ^Map sx-cache ^Map j-cache
-                          ^Map prem-cache prem-cap fetch-size cache-cap
+                          ^Map strengths fetch-size cache-cap
                           prefetch prefetch-min own-pool? dur-id lock]
   p/RecordStore
 
@@ -389,8 +438,8 @@
                                        (strength->str (:strength sentex)) id])
                 (.put sx-cache (ckey id) sentex)
                 ;; the put rewrote the authoritative `strength` column and left `premise`
-                ;; alone, so a cached strength for this handle is now the old one
-                (.remove prem-cache (ckey id)))
+                ;; alone, so a held strength for this handle is now the old one
+                (drop-strength! strengths id))
       id))
 
   (get-sentex [_ id]
@@ -418,7 +467,7 @@
         (mutating lock
                   (jdbc/execute-one! ds [(:del-sentex sql) id id])
                   (.remove sx-cache (ckey id))
-                  (.remove prem-cache (ckey id)))))
+                  (drop-strength! strengths id))))
     nil)
 
   (put-justification [this justification]
@@ -469,9 +518,9 @@
       (jdbc/execute-one! ds [(:del-prov sql) (long id)]))
     nil)
 
-  (sentex-ids [this] (id-roster this (:sentex-ids sql)))
+  (sentex-ids [this] (id-handle-set this (:sentex-ids sql)))
 
-  (justification-ids [this] (id-roster this (:just-ids sql)))
+  (justification-ids [this] (id-handle-set this (:just-ids sql)))
 
   (mark-premise [_ id strength]
     ;; the UPDATE's WHERE is the guard against a phantom premise: it touches nothing
@@ -487,15 +536,10 @@
                     (.remove sx-cache k)
                     ;; **Only what the UPDATE actually marked.**  Its WHERE is the guard
                     ;; against a phantom premise — it touches nothing when the sentex is
-                    ;; absent — and a cache write outside that test would answer
+                    ;; absent — and a strength recorded outside that test would answer
                     ;; `premise-strength` for a handle `premise-ids` does not name.
                     (when (pos? (long (or n 0)))
-                      ;; a key already held is updated whatever the capacity says: the
-                      ;; ordinary path is a strength *upgrade* on a handle already marked,
-                      ;; and dropping that write leaves the old value standing.
-                      (when (or (.containsKey prem-cache k)
-                                (< (.size prem-cache) (long prem-cap)))
-                        (.put prem-cache k strength)))))))
+                      (set-strength! strengths id strength))))))
     nil)
 
   (unmark-premise! [_ id]
@@ -503,45 +547,42 @@
       (mutating lock
                 (jdbc/execute-one! ds [(:unmark-premise sql) (long id)])
                 (.remove sx-cache (ckey id))
-                (.remove prem-cache (ckey id))))
+                (drop-strength! strengths id)))
     nil)
 
   (premise-ids [this]
     ;; the strengths ride the same walk.  `recover` calls `premise-strength` for every
     ;; handle this returns, and a round trip apiece is the difference between a scan
-    ;; and an hour: filling the cache here costs the column the query already reads.
+    ;; and an hour: filling the strength sets here costs the column the query already reads.
     ;;
-    ;; The whole walk holds the fill (read) side: each row's install pairs with a
-    ;; server read that happened back at the cursor, so a lock taken per row would
-    ;; still let an unmark land between the two and be reinstalled after it — the
-    ;; reinstatement `mutating` exists to exclude.  Readers share the side; only a
-    ;; mutation waits, and the usual caller is the one writer (`recover`).
-    (let [[add! finish] (roster/collector)]
+    ;; The walk builds fresh sets and installs them whole, replacing what `strengths` held:
+    ;; the cursor reads every premise, so the fresh sets answer for each one.  The whole walk
+    ;; and the install hold the fill (read) side: a mutation landing between the cursor's
+    ;; read and the install would be undone by it — the reinstatement `mutating` exists to
+    ;; exclude.  Readers share the side; only a mutation waits, and the usual caller is the
+    ;; one writer (`recover`).
+    (let [[add! finish] (handle-set/collector)
+          fresh         (HashMap.)]
       (filling lock
                (reduce-rows this (:premise-ids sql) []
                             (fn [acc ^ResultSet rs]
                               (let [id (.getLong rs 1)
-                                    st (str->strength (.getString rs 2))]
-                                ;; **`st` may be nil**, and a ConcurrentHashMap refuses a
-                                ;; null value: a marked row whose strength column is NULL
-                                ;; is reachable through the protocol (a re-put carrying no
-                                ;; `:strength` rewrites the column and leaves the mark),
-                                ;; and putting it here threw out of every `recover` over
-                                ;; that store — a KB that could not open at all.
-                                ;; `premise-strength` answers `:default` for an absent
-                                ;; entry, which is what the reference stores answer for
-                                ;; this row.
-                                (when (and st (or (.containsKey prem-cache (ckey id))
-                                                  (< (.size prem-cache) (long prem-cap))))
-                                  (.put prem-cache (ckey id) st))
+                                    ;; a marked row whose strength column is NULL is
+                                    ;; reachable (a re-put carrying no `:strength` rewrites
+                                    ;; the column and leaves the mark), and the reference
+                                    ;; stores answer `:default` for it
+                                    st (or (str->strength (.getString rs 2)) :default)]
+                                (handle-set/live-add! (strength-set! fresh st) id)
                                 (add! id)
                                 acc))
-                            nil))
+                            nil)
+               (doseq [s (.values fresh)] (handle-set/live-optimize! s))
+               (replace-strengths! strengths fresh))
       (finish)))
 
   (premise-strength [_ id]
     (or (when (id-ok? id)
-          (or (.get prem-cache (ckey id))
+          (or (strength-in strengths id)
               (str->strength
                (:strength (jdbc/execute-one! ds [(:strength-of sql) (long id)] lower-maps)))))
         :default))
@@ -552,21 +593,21 @@
               (reset! counter 0)
               (.clear sx-cache)
               (.clear j-cache)
-              (.clear prem-cache))
+              (clear-strengths! strengths))
     nil)
 
-  p/ImageStamping
-  ;; one stamp for both images: the trigger counts every statement on the record table,
-  ;; justifications included, so it moves whenever either image's records do
-  (index-stamp [_] (read-stamp ds sql))
-  (belief-stamp [_] (read-stamp ds sql))
+  p/ImageFingerprinting
+  ;; one fingerprint for both images: the trigger counts every statement on the record
+  ;; table, justifications included, so it moves whenever either image's records do
+  (index-fingerprint [_] (read-fingerprint ds sql))
+  (belief-fingerprint [_] (read-fingerprint ds sql))
 
   p/Tallying
   ;; **The whole reason the capability exists.**  `open-kb` asks how many records this
-  ;; store holds (the durable index's coverage gate) and whether it holds any at all (the
+  ;; store holds (the durable index's coverage check) and whether it holds any at all (the
   ;; recovery branch), and `import` asks the first again to report what it loaded.  Every
   ;; one of those spelled as `(count (sentex-ids …))` is this table on the wire: 100M
-  ;; handles streamed through a cursor and a roster built out of them, to answer with one
+  ;; handles streamed through a cursor and a set built out of them, to answer with one
   ;; number.  Here they are one row each — the counts an index-only scan over `kind`, the
   ;; samples a `LIMIT 1` that stops at the first.
   ;;
@@ -641,7 +682,7 @@
     (dur/deregister! @dur-id)
     (.clear sx-cache)
     (.clear j-cache)
-    (.clear prem-cache)
+    (clear-strengths! strengths)
     ;; a pool this store built is this store's to close; a DataSource handed in
     ;; belongs to whoever made it
     (when own-pool? (.close ^HikariDataSource ds))
@@ -727,8 +768,8 @@
 
   COPY has no `ON CONFLICT`, so this is a load into handles the store does not already
   hold — a fresh store, or a dump whose handles are being preserved.  A duplicate handle
-  raises rather than overwriting, which is the honest answer for a bulk path: the
-  alternative is a silent replacement of a record the caller did not know was there.
+  raises rather than overwriting, so a bulk load never silently replaces a record the
+  caller did not know was there.
 
   Nothing written here enters this store's read caches.  A bulk load is a stream nobody
   is reading back, and filling a 65k-entry LRU with the tail of a 30M-record corpus
@@ -804,7 +845,7 @@
   the others do not, and it is a load rather than an upsert: a handle the store already
   holds raises rather than being overwritten.
 
-  **A record's `:strength` rosters it as a premise here**, where `put-sentex` leaves the
+  **A record's `:strength` marks it as a premise here**, where `put-sentex` leaves the
   mark to `mark-premise`.  The two entry points are asked different questions: the engine
   stores a fact and marks it at the choke point one line later, while a bulk load has no
   such line — the strength a dump's record carries *is* what a later `recover` reads as
@@ -842,16 +883,20 @@
   "`id->strength` marked a chunk at a time, one statement per chunk.
 
   The `RETURNING` is not decoration: the one-row form reads its update count to decide
-  whether the strength cache may be filled — a handle with no sentex matches nothing and
+  whether a strength may be recorded — a handle with no sentex matches nothing and
   must not answer `premise-strength` for a handle `premise-ids` does not name — and over a
-  batch the count alone cannot say *which* rows matched, so the statement says."
+  batch the count alone cannot say *which* rows matched, so the statement says.
+
+  In id order, so a chunk's rows share heap pages and consecutive chunks walk the table
+  forward.  `id->strength` is a hash map, and in its order each row of a chunk is a page
+  of its own: on a table larger than `shared_buffers`, a read from disk per row."
   [store id->strength]
-  (let [^DataSource ds  (:ds store)
-        sql             (:sql store)
-        ^Map sx-cache   (:sx-cache store)
-        ^Map prem-cache (:prem-cache store)
-        prem-cap        (:prem-cap store)]
-    (doseq [chunk (partition-all annotate-chunk (filter (fn [[id _]] (id-ok? id)) id->strength))]
+  (let [^DataSource ds (:ds store)
+        sql            (:sql store)
+        ^Map sx-cache  (:sx-cache store)
+        strengths      (:strengths store)]
+    (doseq [chunk (partition-all annotate-chunk
+                                 (sort-by key (filter (fn [[id _]] (id-ok? id)) id->strength)))]
       (let [rows   (vec chunk)
             params (into [] (mapcat (fn [[id st]] [(long id) (strength->str (or st :default))]))
                          rows)]
@@ -862,12 +907,9 @@
                                                              params)
                                                     lower-maps))]
                     (doseq [[id st] rows]
-                      (let [k (ckey id)]
-                        (.remove sx-cache k)
-                        (when (contains? marked (long id))
-                          (when (or (.containsKey prem-cache k)
-                                    (< (.size prem-cache) (long prem-cap)))
-                            (.put prem-cache k (or st :default)))))))))))
+                      (.remove sx-cache (ckey id))
+                      (when (contains? marked (long id))
+                        (set-strength! strengths id (or st :default)))))))))
   nil)
 
 (defn- put-provenance-in-chunks!
@@ -898,7 +940,6 @@
 ;; ---- construction -------------------------------------------------------
 
 (def ^:private default-cache-capacity 65536)
-(def ^:private default-premise-cache-capacity 4000000)
 (def ^:private default-fetch-size 5000)
 (def ^:private default-pool-size 8)
 
@@ -915,18 +956,19 @@
     :prefetch :prefetch-min})
 
 (defn ensure-schema!
-  "Create the record, provenance, meta and stamp tables (and the premise index and the
-  trigger that moves the stamp), and the schema itself when one is named.  Idempotent;
-  runs before any op, so a store made before the stamp existed gains it at its next open,
-  counting from zero — it has no image to be stamped against yet."
+  "Create the record, provenance, meta and fingerprint tables (and the premise index and
+  the trigger that moves the fingerprint), and the schema itself when one is named.
+  Idempotent; runs before any op, so a store made before the fingerprint table existed
+  gains it at its next open, counting from zero — it has no image to be checked against
+  yet."
   [ds sql]
   (when-let [s (:ddl-schema sql)] (jdbc/execute-one! ds [s]))
   (jdbc/execute-one! ds [(:ddl-record sql)])
   (jdbc/execute-one! ds [(:ddl-premise-ix sql)])
   (jdbc/execute-one! ds [(:ddl-prov sql)])
   (jdbc/execute-one! ds [(:ddl-meta sql)])
-  (jdbc/execute-one! ds [(:ddl-stamp sql)])
-  (jdbc/execute-one! ds [(:seed-stamp sql)])
+  (jdbc/execute-one! ds [(:ddl-fingerprint sql)])
+  (jdbc/execute-one! ds [(:seed-fingerprint sql)])
   (jdbc/execute-one! ds [(:ddl-bump-fn sql)])
   (jdbc/execute-one! ds [(:ddl-bump sql)]))
 
@@ -964,8 +1006,9 @@
   * `:schema` — put the three tables in a schema of their own (created if absent), so
     one database holds several KBs and `DROP SCHEMA` removes one whole;
   * `:cache-capacity` — the per-kind fetch LRU (default 65536);
-  * `:premise-cache-capacity` — how many premise strengths to hold in RAM (default
-    4,000,000); past it the walk stops filling and `premise-strength` pays a round trip;
+  * `:premise-cache-capacity` — accepted and ignored.  The strength sets hold every
+    premise the `premise-ids` walk read, at a fraction of a byte a handle, and no count
+    bounds them;
   * `:fetch-size` — rows per cursor fetch on the enumerations (default 5000);
   * `:pool-size` — maximum pooled connections (default 8);
   * `:prefetch` — act on a caller's prefetch hint (default true).  Whether a hint ever
@@ -980,14 +1023,12 @@
   releases the pool it built and drops its durability registration."
   ([spec] (pg-record-store spec {}))
   ([spec opts]
-   (let [{:keys [schema cache-capacity premise-cache-capacity fetch-size pool-size
-                 prefetch prefetch-min]
-          :or   {cache-capacity         default-cache-capacity
-                 premise-cache-capacity default-premise-cache-capacity
-                 fetch-size             default-fetch-size
-                 pool-size              default-pool-size
-                 prefetch               true
-                 prefetch-min           default-prefetch-min}}
+   (let [{:keys [schema cache-capacity fetch-size pool-size prefetch prefetch-min]
+          :or   {cache-capacity default-cache-capacity
+                 fetch-size     default-fetch-size
+                 pool-size      default-pool-size
+                 prefetch       true
+                 prefetch-min   default-prefetch-min}}
          (merge (when (map? spec) (select-keys spec store-keys)) opts)
          schema (check-schema! schema)
          sql    (statements schema)
@@ -1003,8 +1044,7 @@
                      :counter    (atom (load-high-water ds sql))
                      :sx-cache   (lru cache-capacity)
                      :j-cache    (lru cache-capacity)
-                     :prem-cache (ConcurrentHashMap.)
-                     :prem-cap   (long premise-cache-capacity)
+                     :strengths  (HashMap.)
                      :fetch-size (long fetch-size)
                      :cache-cap  (long cache-capacity)
                      :prefetch   (boolean prefetch)

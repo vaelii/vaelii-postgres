@@ -4,7 +4,7 @@
   (Integer/parseInt
    (second (re-find #"^(?:1\.)?(\d+)" (System/getProperty "java.specification.version")))))
 
-(defproject com.vaelii/postgres "0.28.1-SNAPSHOT"
+(defproject com.vaelii/postgres "0.33.1-SNAPSHOT"
   :description "Postgres targets for vaelii's storage protocols, in two independent
                 lanes. The record store (vaelii.postgres.record-store) puts a KB's
                 durable ground truth in a database — core selects it as :pg-memory

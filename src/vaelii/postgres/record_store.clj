@@ -211,6 +211,12 @@
      :del-just       (str "WITH del AS (DELETE FROM " rec
                           " WHERE id = ? AND kind = " kind-justification ")
                            DELETE FROM " prov " WHERE id = ?")
+     :del-sentexes   (str "WITH del AS (DELETE FROM " rec
+                          " WHERE id = ANY(?) AND kind = " kind-sentex ")
+                           DELETE FROM " prov " WHERE id = ANY(?)")
+     :del-justs      (str "WITH del AS (DELETE FROM " rec
+                          " WHERE id = ANY(?) AND kind = " kind-justification ")
+                           DELETE FROM " prov " WHERE id = ANY(?)")
      :put-prov       (str "INSERT INTO " prov " AS p (id, prov) VALUES (?, ?)
                            ON CONFLICT (id) DO UPDATE SET prov = excluded.prov")
      :get-prov       (str "SELECT prov FROM " prov " WHERE id = ?")
@@ -928,6 +934,32 @@
   PgRecordStore
   (mark-premise-batch [store id->strength] (mark-premises-in-chunks! store id->strength))
   (put-provenance-batch [store entries] (put-provenance-in-chunks! store entries)))
+
+(defn- delete-in-chunks!
+  "`ids` deleted a chunk at a time by `stmt`, one statement per chunk tearing down each
+  record with its provenance, as `delete-sentex!` does one; each is then dropped from
+  `cache`, and for sentexes from the strength sets."
+  [store stmt ^Map cache sentex? ids]
+  (let [^DataSource ds (:ds store)]
+    (doseq [chunk (partition-all annotate-chunk (sort (into #{} (comp (filter id-ok?) (map ckey)) ids)))]
+      (mutating (:lock store)
+                (with-open [^Connection c (.getConnection ds)]
+                  (let [arr (.createArrayOf c "bigint" (into-array Long chunk))]
+                    (with-open [^PreparedStatement ps (.prepareStatement c ^String stmt)]
+                      (.setArray ps 1 arr)
+                      (.setArray ps 2 arr)
+                      (.execute ps))))
+                (doseq [id chunk]
+                  (.remove cache id)
+                  (when sentex? (drop-strength! (:strengths store) id))))))
+  nil)
+
+(extend-protocol p/BulkDeleting
+  PgRecordStore
+  (delete-sentex-batch [store ids]
+    (delete-in-chunks! store (:del-sentexes (:sql store)) (:sx-cache store) true ids))
+  (delete-justification-batch [store ids]
+    (delete-in-chunks! store (:del-justs (:sql store)) (:j-cache store) false ids)))
 
 (extend-protocol p/BulkLoading
   PgRecordStore

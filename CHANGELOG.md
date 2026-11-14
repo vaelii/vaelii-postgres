@@ -1,5 +1,25 @@
 # Changelog
 
+## 0.33.0 — 2026-11-10 — "a record surgery deletes its records one statement per 1,000 handles, through core's `BulkDeleting`"
+
+Requires core 0.33.0, whose optional `vaelii.impl.protocols/BulkDeleting` protocol the
+store implements. An existing schema opens unchanged. **2 entries** — 1 Fix, 1 Internal.
+
+### Fix: performance
+
+- **A record surgery deletes its records one statement per 1,000 handles, not one round
+  trip per record.** The store implements core's optional
+  `vaelii.impl.protocols/BulkDeleting`: `delete-sentex-batch` and
+  `delete-justification-batch` delete a chunk's records and their provenance with
+  `id = ANY(?)`, then evict each from the cache and, for a sentex, from the strength sets,
+  and leave the end state the per-handle deletes leave. Core's `edit-records!` hands the
+  store 1,000 handles at a time. *Migration:* none.
+
+### Internal
+
+- **CI sets `PGUSER` and `PGPASSWORD` for the suite**, so a `:pg-snapshot` directory
+  reopened with no `:pg` option authenticates against the CI database.
+
 ## 0.28.0 — 2026-10-21 — "the store fingerprints its images through `ImageFingerprinting`, and `premise-strength` answers every walked premise from per-strength handle sets"
 
 Requires core 0.28.0, whose `p/ImageFingerprinting` protocol and `vaelii.impl.handle-set`

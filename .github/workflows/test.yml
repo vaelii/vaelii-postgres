@@ -102,4 +102,8 @@ jobs:
         working-directory: vaelii-postgres
         env:
           VAELII_PG_URL: jdbc:postgresql://localhost:5432/vaelii?user=vaelii&password=vaelii
+          # A directory-only reopen reads the server off the directory and the
+          # credentials off PGUSER / PGPASSWORD, not off VAELII_PG_URL.
+          PGUSER: vaelii
+          PGPASSWORD: vaelii
         run: lein test
